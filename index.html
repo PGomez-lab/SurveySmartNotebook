@@ -59,6 +59,9 @@
     <button id="btnAddPoint" class="tool-btn" data-mode="add" title="Click the map to add survey points">
       <span class="ic">&#128204;</span> Add Point
     </button>
+    <button id="btnAddTripod" class="tool-btn" data-mode="tripod" title="Click the map to place the instrument/tripod's actual setup location - differential leveling sighting lines route through it">
+      <span class="ic">&#9698;</span> Add Tripod
+    </button>
     <button id="btnConnect" class="tool-btn" data-mode="connect" title="Click points in order to connect them">
       <span class="ic">&#128279;</span> Connect Points
     </button>
@@ -251,6 +254,13 @@
         <div class="hidden" id="pf_levelFsBlock">
           <p class="hint-text" style="margin:0 0 4px;"><strong>Foresight (FS)</strong> - <span id="pf_levelFsHint">sighting this point from the current setup</span></p>
           <div class="form-row">
+            <label>Tripod Setup
+              <select id="pf_levelFsTripod">
+                <option value="">no tripod placed yet</option>
+              </select>
+            </label>
+          </div>
+          <div class="form-row">
             <label>FS
               <input type="number" step="0.01" id="pf_levelFs" placeholder="ft" />
             </label>
@@ -274,6 +284,13 @@
         <div class="hidden" id="pf_levelBsBlock">
           <p class="hint-text" style="margin:0 0 4px;"><strong>Backsight (BS)</strong> - <span id="pf_levelBsHint">starting a new setup here</span></p>
           <div class="form-row">
+            <label>Tripod Setup
+              <select id="pf_levelBsTripod">
+                <option value="">no tripod placed yet</option>
+              </select>
+            </label>
+          </div>
+          <div class="form-row">
             <label>BS
               <input type="number" step="0.01" id="pf_levelBs" placeholder="ft" />
             </label>
@@ -292,20 +309,106 @@
         </div>
 
         <div class="form-full hidden" id="pf_traverseReadingsRow">
-          <div class="form-row">
-            <label>Field Angle (turned at this station)
+          <label class="form-row-check">
+            <input type="checkbox" id="pf_isSideShot" />
+            This is a side shot (a detail point read from the current setup - not part of the traverse chain)
+          </label>
+          <div id="pf_traverseStationFields">
+            <p class="hint-text" style="margin:0 0 4px;">Standard procedure: the instrument turns an angle BETWEEN two lines - the Backsight (to the previous point) and the Foresight (to the next one). Each line is its own sighting - its own Tripod and its own raw angle reading - since a Backsight can come from a different setup (e.g. a free-station resection) than the Foresight. Record each line's own reading first, then work out the Interior Angle from the two.</p>
+
+            <p class="hint-text" style="margin:8px 0 4px;"><strong>Backsight Line</strong> (to the previous point)</p>
+            <div class="form-row">
+              <label>Tripod Setup
+                <select id="pf_travBsTripod">
+                  <option value="">no tripod placed yet</option>
+                </select>
+              </label>
+              <label>Angle Reading
+                <input type="text" id="pf_travBsAngleReading" placeholder="e.g. 0&deg;00'00&quot;" />
+              </label>
+            </div>
+            <div class="form-row">
+              <label>Bearing
+                <input type="text" id="pf_travBsBearing" placeholder="N 00&deg;00'00&quot; E" />
+              </label>
+              <label>Azimuth
+                <input type="text" id="pf_travBsAzimuth" placeholder="0-360&deg;" />
+              </label>
+            </div>
+            <label class="form-full">Distance (Taped/EDM)
+              <input type="number" step="0.1" id="pf_travBsDistTaped" placeholder="ft" />
+            </label>
+
+            <p class="hint-text" style="margin:8px 0 4px;"><strong>Foresight Line</strong> (to the next point)</p>
+            <div class="form-row">
+              <label>Tripod Setup
+                <select id="pf_travFsTripod">
+                  <option value="">no tripod placed yet</option>
+                </select>
+              </label>
+              <label>Angle Reading
+                <input type="text" id="pf_travFsAngleReading" placeholder="e.g. 89&deg;42'15&quot;" />
+              </label>
+            </div>
+            <div class="form-row">
+              <label>Bearing
+                <input type="text" id="pf_fieldBearing" placeholder="N 00&deg;00'00&quot; E" />
+              </label>
+              <label>Azimuth
+                <input type="text" id="pf_fieldAzimuth" placeholder="0-360&deg;" />
+              </label>
+            </div>
+            <label class="form-full">Distance (Taped/EDM)
+              <input type="number" step="0.1" id="pf_travFsDistTaped" placeholder="ft" />
+            </label>
+
+            <p class="hint-text" style="margin:8px 0 4px;">Now work out the Interior Angle from your two readings above.</p>
+            <label class="form-full">Angle measured from
+              <select id="pf_travAngleFrom">
+                <option value="">(pick the backsight or foresight point)</option>
+              </select>
+            </label>
+            <label class="form-full">Interior Angle (work out by hand: Foresight reading &minus; Backsight reading)
               <input type="text" id="pf_fieldAngle" placeholder="e.g. 89&deg;42'15&quot;" />
             </label>
-            <label>Field Bearing (to next point)
-              <input type="text" id="pf_fieldBearing" placeholder="N 00&deg;00'00&quot; E" />
-            </label>
           </div>
-          <label class="form-full">Field Azimuth (to next point)
-            <input type="text" id="pf_fieldAzimuth" placeholder="0-360&deg;" />
-          </label>
+          <div class="hidden" id="pf_sideShotBlock">
+            <p class="hint-text" style="margin:0 0 4px;"><strong>Side Shot</strong> - a single angle + distance from wherever the instrument is currently set up, same idea as a leveling run's plain (non-turning) point.</p>
+            <div class="form-row">
+              <label>Sighted From
+                <select id="pf_sideShotFrom">
+                  <option value="">no tripod or point placed yet</option>
+                </select>
+              </label>
+              <label>Angle
+                <input type="text" id="pf_sideShotAngle" placeholder="e.g. 89&deg;42'15&quot;" />
+              </label>
+            </div>
+            <div class="form-row">
+              <label>Bearing
+                <input type="text" id="pf_sideShotBearing" placeholder="N 00&deg;00'00&quot; E" />
+              </label>
+              <label>Azimuth
+                <input type="text" id="pf_sideShotAzimuth" placeholder="0-360&deg;" />
+              </label>
+            </div>
+            <div class="form-row">
+              <label>Distance (Taped)
+                <input type="number" step="0.1" id="pf_sideShotDistTaped" placeholder="ft" />
+              </label>
+            </div>
+            <div class="form-row">
+              <label>Stadia Top
+                <input type="number" step="0.01" id="pf_sideShotStadiaTop" placeholder="ft" />
+              </label>
+              <label>Stadia Bottom
+                <input type="number" step="0.01" id="pf_sideShotStadiaBottom" placeholder="ft" />
+              </label>
+            </div>
+          </div>
         </div>
       </div>
-      <p class="hint-text form-full hidden" id="pf_adjustedNote">The Corrected/Adjusted Angle, Bearing, and Azimuth for this station are entered later, in the Traverse Table &mdash; they depend on the whole traverse's angular closure, not just this one station.</p>
+      <p class="hint-text form-full hidden" id="pf_adjustedNote">The Corrected/Adjusted Angle, Bearing, and Azimuth for this point are entered later, in the Traverse Table &mdash; they depend on the whole traverse's angular closure, not just this one point.</p>
       <label class="form-full">Description
         <input type="text" id="pf_description" placeholder="e.g. Cracked concrete panel, NW corner" />
       </label>
