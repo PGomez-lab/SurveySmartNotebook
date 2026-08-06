@@ -209,9 +209,9 @@ const PdfExport = (() => {
   }
 
   // Traverse findings - the full Station Data worksheet (Field/Adjusted
-  // angle, bearing, azimuth, distance, elevation), plus the closure check.
-  // Full page width comfortably fits every column, unlike the half-width
-  // column this used to be squeezed into.
+  // angle, bearing, azimuth, distance - no elevation, that's Leveling's
+  // job), plus the closure check. Full page width comfortably fits every
+  // column, unlike the half-width column this used to be squeezed into.
   function drawTraverseFindings(doc, project, x, y, w, maxY, style) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);

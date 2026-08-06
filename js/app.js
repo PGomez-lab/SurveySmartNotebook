@@ -41,7 +41,7 @@
     const tab = activeTabName();
     if (tab === "traverse") Traverse.renderPanel(project);
     if (tab === "leveling") Leveling.renderPanel(project);
-    if (tab === "planview") PlanView.render(el("planViewCanvas"), project);
+    if (tab === "planview") PlanView.render(el("planViewCanvas"), project, { hideLegend: !MapView.isLegendVisible() });
   }
 
   function populateMetaInputs(project) {
@@ -255,18 +255,53 @@
     populateSightedFromSelect(el("pf_sideShotFrom"), p.sightedFromId, p.id);
   }
 
-  // A traverse station is just point-to-point: set up here, sight the
-  // previous point, zero it, sight the next point, and record the interior
-  // angle turned - no tripod, no separate Backsight/Foresight setup. This
-  // point's own line to the NEXT point is what gets recorded (Bearing/
-  // Azimuth/Distance); the previous point's own row already recorded ITS
-  // line to this one.
+  // A traverse station records three things, but not all at the same
+  // instant. Bearing/Azimuth is a forward field reading - the direction of
+  // THIS point's own outgoing line, readable the moment you're standing
+  // here (point the instrument/compass ahead and read it) even before the
+  // next point exists - always fillable, no gating. Distance is the length
+  // of the line you just walked to GET here - only knowable once there's a
+  // point behind you to have measured from, so it stays blank until this
+  // point has a previous one. The Interior Angle is the turn from that
+  // incoming line's azimuth (recorded back at the previous point) into this
+  // point's own outgoing azimuth (just entered above) - same one point
+  // behind you, no point ahead needed either. Both are labeled by segment
+  // ("line AB") using the previous point's ID and this one's.
   function populateTraverseStationFields(p) {
     const num = (v) => (v === null || v === undefined ? "" : v);
     el("pf_fieldBearing").value = p.fieldBearing || "";
     el("pf_fieldAzimuth").value = p.fieldAzimuth || "";
     el("pf_travDistTaped").value = num(p.fsDistTaped);
     el("pf_fieldAngle").value = p.fieldAngle || "";
+
+    // A CLOSED traverse wraps around (the last station's next is the first,
+    // and vice versa) - mirrors Traverse.neighborsFor exactly. A brand-new
+    // point isn't in the array yet (idx -1), but it's about to be APPENDED
+    // after whatever's currently the last station - that station IS its
+    // prev, even though the wraparound math (which needs a real index)
+    // doesn't apply until this point is actually saved.
+    const stations = State.getProject().points.filter((pt) => isTraverseCategory(pt.surveyCategory) && !pt.isSideShot);
+    const idx = stations.findIndex((pt) => pt.id === p.id);
+    const n = stations.length;
+    const traverseConn = State.getProject().connections.find((c) => c.type === "traverse");
+    const closed = idx >= 0 && n > 1 && traverseConn && traverseConn.surveyType === "closed";
+    const prevPt = idx >= 0
+      ? (closed ? stations[(idx - 1 + n) % n] : idx > 0 ? stations[idx - 1] : null)
+      : (n ? stations[n - 1] : null);
+    // A brand-new point has no id yet, but its upcoming one is already
+    // previewed in the ID field (set before this runs - see
+    // openPointModalForNew) - use that instead of leaving the label blank.
+    const thisLabel = p.id || el("pf_id").value;
+    const hasIncoming = !!prevPt;
+
+    el("pf_travLineRow").classList.toggle("hidden", !hasIncoming);
+    el("pf_fieldAngleRow").classList.toggle("hidden", !hasIncoming);
+    el("pf_travLineHint").classList.toggle("hidden", hasIncoming);
+    el("pf_travLineHeading").classList.toggle("hidden", !hasIncoming);
+    if (hasIncoming) {
+      el("pf_travLineHeading").textContent = `Line ${prevPt.id}→${thisLabel} (the leg you just walked)`;
+      el("pf_fieldAngleLabel").textContent = `Interior Angle ${prevPt.id}-${thisLabel}`;
+    }
   }
 
   // Fills a Tripod Setup <select> with every placed tripod plus a "none"
@@ -453,43 +488,31 @@
       bs: leveling ? numOrNull(el("pf_levelBs").value) : null,
       fs: leveling ? numOrNull(el("pf_levelFs").value) : null,
       dist: null,
-      // A side shot has no outgoing leg of its own (the chain doesn't
-      // continue through it), so the station-only Field Angle/Backsight/
-      // Foresight fields are irrelevant to it - same treatment as bs/fs
+      // A traverse station is just point-to-point: this point's own line to
+      // the NEXT point (Bearing/Azimuth/Distance), plus the Interior Angle
+      // turned here. No tripod, no separate Backsight/Foresight setup. A
+      // side shot has no outgoing leg of its own (the chain doesn't continue
+      // through it), so these are irrelevant to it - same treatment as bs/fs
       // outside Leveling above.
       fieldAngle: isTravStation ? (el("pf_fieldAngle").value.trim() || null) : null,
       fieldBearing: isTravStation ? (el("pf_fieldBearing").value.trim() || null) : null,
       fieldAzimuth: isTravStation ? (el("pf_fieldAzimuth").value.trim() || null) : null,
-      fsAngleReading: isTravStation ? (el("pf_travFsAngleReading").value.trim() || null) : null,
-      // The Backsight line's bearing/azimuth/angle reading - a traverse-only
-      // counterpart to the Foresight line's own fields above, since each is
-      // an independent sighting (its own tripod, its own raw reading).
-      bsFieldBearing: isTravStation ? (el("pf_travBsBearing").value.trim() || null) : null,
-      bsFieldAzimuth: isTravStation ? (el("pf_travBsAzimuth").value.trim() || null) : null,
-      bsAngleReading: isTravStation ? (el("pf_travBsAngleReading").value.trim() || null) : null,
-      // Not always "the previous/next station" once a side shot (or a
-      // resection) is also visible from this same setup - explicit rather
-      // than assumed, and independent per line like everything else here.
-      bsAngleFromId: isTravStation ? (el("pf_travBsAngleFrom").value || null) : null,
-      fsAngleFromId: isTravStation ? (el("pf_travFsAngleFrom").value || null) : null,
       bsStadiaTop: leveling ? numOrNull(el("pf_levelBsStadiaTop").value) : null,
       bsStadiaBottom: leveling ? numOrNull(el("pf_levelBsStadiaBottom").value) : null,
-      bsDistTaped: leveling ? numOrNull(el("pf_levelBsDistTaped").value) : isTravStation ? numOrNull(el("pf_travBsDistTaped").value) : null,
+      bsDistTaped: leveling ? numOrNull(el("pf_levelBsDistTaped").value) : null,
       fsStadiaTop: leveling ? numOrNull(el("pf_levelFsStadiaTop").value) : null,
       fsStadiaBottom: leveling ? numOrNull(el("pf_levelFsStadiaBottom").value) : null,
-      fsDistTaped: leveling ? numOrNull(el("pf_levelFsDistTaped").value) : isTravStation ? numOrNull(el("pf_travFsDistTaped").value) : null,
-      // Which tripod setup each line's reading actually came from - lets the
-      // map draw the real sighting line instead of a straight point-to-point
-      // guess. A traverse station's Backsight and Foresight are two
-      // independent sightings, each with its own dropdown, so they CAN
-      // differ (e.g. a free-station resection) rather than being forced to
-      // the same setup.
-      fsTripodId: leveling ? (el("pf_levelFsTripod").value || null) : isTravStation ? (el("pf_travFsTripod").value || null) : null,
-      bsTripodId: leveling ? (el("pf_levelBsTripod").value || null) : isTravStation ? (el("pf_travBsTripod").value || null) : null,
-      // A side shot's own single reading - a Station ID or Tripod ID (a
-      // free-station setup) plus angle/distance, independent of the whole
-      // traverse's closure, so (unlike Correction/Adjusted) it's collected
-      // right here rather than in the Traverse Table.
+      fsDistTaped: leveling ? numOrNull(el("pf_levelFsDistTaped").value) : isTravStation ? numOrNull(el("pf_travDistTaped").value) : null,
+      // Differential leveling only - which tripod setup each line's reading
+      // actually came from, so the map can draw the real sighting line
+      // instead of a straight point-to-point guess. Traverse has no tripod
+      // concept at all.
+      fsTripodId: leveling ? (el("pf_levelFsTripod").value || null) : null,
+      bsTripodId: leveling ? (el("pf_levelBsTripod").value || null) : null,
+      // A side shot's own single reading - the station it was sighted from,
+      // plus angle/distance, independent of the whole traverse's closure, so
+      // (unlike Correction/Adjusted) it's collected right here rather than
+      // in the Traverse Table.
       sightedFromId: isSideShot ? (el("pf_sideShotFrom").value || null) : null,
       sideShotAngle: isSideShot ? (el("pf_sideShotAngle").value.trim() || null) : null,
       sideShotBearing: isSideShot ? (el("pf_sideShotBearing").value.trim() || null) : null,
@@ -565,7 +588,7 @@
         if (btn.dataset.tab === "leveling") Leveling.renderPanel(project);
         if (btn.dataset.tab === "planview") {
           showToast("Loading map imagery...");
-          PlanView.render(el("planViewCanvas"), project);
+          PlanView.render(el("planViewCanvas"), project, { hideLegend: !MapView.isLegendVisible() });
         }
       });
     });
@@ -609,6 +632,11 @@
     el("btnLegend").addEventListener("click", (e) => {
       MapView.toggleLegend();
       e.target.classList.toggle("tool-active");
+      // Keep the Top View's own legend in sync with the same toggle, in case
+      // that's the active tab right now.
+      if (activeTabName() === "planview") {
+        PlanView.render(el("planViewCanvas"), State.getProject(), { hideLegend: !MapView.isLegendVisible() });
+      }
     });
 
     el("btnExport").addEventListener("click", async () => {

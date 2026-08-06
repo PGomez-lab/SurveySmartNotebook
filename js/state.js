@@ -352,13 +352,11 @@ const State = (() => {
           delete c.fieldData[oldId];
         }
       });
-      // Other points can reference this one by ID directly (angleFromId
-      // fields, a side shot's sightedFromId) - same reasoning as remapping
-      // pointIds/fieldData above, just for cross-point references instead of
-      // connection membership.
+      // Other points can reference this one by ID directly (a side shot's
+      // sightedFromId) - same reasoning as remapping pointIds/fieldData
+      // above, just for cross-point references instead of connection
+      // membership.
       project.points.forEach((other) => {
-        if (other.bsAngleFromId === oldId) other.bsAngleFromId = patch.id;
-        if (other.fsAngleFromId === oldId) other.fsAngleFromId = patch.id;
         if (other.sightedFromId === oldId) other.sightedFromId = patch.id;
       });
     }
@@ -375,14 +373,12 @@ const State = (() => {
       if (c.fieldData) delete c.fieldData[id];
     });
     project.connections = project.connections.filter((c) => c.auto || c.pointIds.length >= 2);
-    // Other points can reference this one by ID directly (angleFromId
-    // fields, a side shot's sightedFromId) - same cleanup deleteTripod
-    // already does for fsTripodId/bsTripodId, just for point references
-    // instead of tripod ones. Left dangling, these would keep pointing a
-    // sighting line/table row at an ID that no longer exists.
+    // Other points can reference this one by ID directly (a side shot's
+    // sightedFromId) - same cleanup deleteTripod already does for
+    // fsTripodId/bsTripodId, just for point references instead of tripod
+    // ones. Left dangling, this would keep pointing a sighting line/table
+    // row at an ID that no longer exists.
     project.points.forEach((p) => {
-      if (p.bsAngleFromId === id) p.bsAngleFromId = null;
-      if (p.fsAngleFromId === id) p.fsAngleFromId = null;
       if (p.sightedFromId === id) p.sightedFromId = null;
     });
     syncAutoRuns();

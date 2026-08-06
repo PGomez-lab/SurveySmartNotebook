@@ -11,19 +11,25 @@
  * structured worksheet/field book, not a calculator.
  *
  * A traverse station is purely horizontal control - point to point, no
- * tripod, no elevation. Set up over the point, sight back to the previous
- * one, zero the horizontal angle, sight ahead to the next one, and record:
- * the Interior Angle turned, and this point's own line to the next one
- * (Bearing/Azimuth/Distance). Field Angle/Bearing/Azimuth - a theodolite/
- * total station displays horizontal angle and slope distance, and once
- * oriented to a known backsight can display bearing/azimuth directly - can
- * be jotted down right on the point itself the moment it's added.
- * computeLegs() seeds each station's row from the point's own quick-entry
- * values, then lets anything typed directly into the table below override
- * it, same as a later, separate observation would in a paper book.
- * Correction/Adjusted Angle/Bearing/Azimuth depend on the whole traverse's
- * angular closure (not knowable until every station has been surveyed), so
- * those are only ever entered in the Traverse Table below, after the fact.
+ * tripod, no elevation. Each point records THREE things, but not all at the
+ * same instant: Bearing/Azimuth is a forward field reading - the direction
+ * of this point's own OUTGOING line, readable the moment you're standing
+ * here (point the instrument/compass ahead and read it) even before the
+ * next point exists, so it's always fillable. Distance is the length of the
+ * line you just walked to GET here - only knowable once there's a point
+ * behind you to have measured FROM, so it stays blank until this point has
+ * a previous one. The Interior Angle is the turn from that incoming line's
+ * azimuth (recorded back at the previous point) into this point's own
+ * outgoing azimuth (just entered above) - both already known the moment a
+ * previous point exists, so it needs the same one point behind you, not a
+ * point ahead too. computeLegs() seeds each station's row from these
+ * quick-entry values (Distance from the NEXT point's own reading, since
+ * that's literally the same line, just recorded where you land), then lets
+ * anything typed directly into the table below override it, same as a
+ * later, separate observation would in a paper book. Correction/Adjusted
+ * Angle/Bearing/Azimuth depend on the whole traverse's angular closure (not
+ * knowable until every station has been surveyed), so those are only ever
+ * entered in the Traverse Table below, after the fact.
  *
  * Two tables, matching a real traverse computation:
  *   1. Station Data - Distance/Angle/Bearing/Azimuth for each station's
@@ -161,16 +167,24 @@ const Traverse = (() => {
       const hasOutgoing = i < legCount;
       const to = hasOutgoing ? pts[closed ? (i + 1) % n : i + 1] : null;
       const { prev, next } = neighborsFor(stations, i, closed);
-      // Seed Field Angle/Bearing/Azimuth/Distance from the point's own
-      // quick-entry readings (recorded when the point was added/edited on
-      // the map), then let anything already entered here in the table
-      // override it. Corrected/Adjusted values are NOT seeded - they depend
-      // on the whole traverse's angular closure, so they only ever come
-      // from this table.
+      // Seed Field Angle/Bearing/Azimuth/Distance from quick-entry readings
+      // recorded when points were added/edited on the map, then let anything
+      // already entered here in the table override it. Bearing/Azimuth are a
+      // forward field reading - the direction of THIS point's own outgoing
+      // line, readable the instant you're standing here (point a compass/
+      // instrument ahead and read it), even before the next point has been
+      // placed - so they're seeded from `from` itself. Distance is the
+      // opposite: it's the length of the line you just walked to GET here,
+      // taped/EDM'd on arrival - the same physical measurement as "this
+      // point's own outgoing distance" is just recorded on the point at the
+      // FAR end of it (`to`, once it exists), so that's where it's seeded
+      // from. Corrected/Adjusted values are NOT seeded - they depend on the
+      // whole traverse's angular closure, so they only ever come from this
+      // table.
       const fd = Object.assign(
         {
           fieldAngle: from.fieldAngle, fieldBearing: from.fieldBearing, fieldAzimuth: from.fieldAzimuth,
-          fieldDistance: from.fsDistTaped,
+          fieldDistance: to ? to.fsDistTaped : null,
         },
         fieldData[from.id] || {}
       );
@@ -189,11 +203,13 @@ const Traverse = (() => {
         fromId: from.id,
         toId: to ? to.id : null,
         hasOutgoing,
-        // The Interior Angle is turned BETWEEN the backsight (to prev) and
-        // the foresight (to next) - needs both to exist. Bearing/Azimuth/
-        // Distance describe this point's own outgoing line, so they only
-        // need hasOutgoing.
-        hasAngle: !!(prev && next),
+        // The Interior Angle is the turn from the incoming line's azimuth
+        // (established back at `prev`, when IT recorded its own forward
+        // reading) into this point's own outgoing azimuth - both of those
+        // are already known the moment `prev` exists, without needing
+        // `next` to exist at all (unlike the old tripod-era model, which
+        // needed both a real backsight AND foresight setup).
+        hasAngle: !!prev,
         actualDistance,
         actualAzimuth,
         actualBearing,
@@ -285,7 +301,7 @@ const Traverse = (() => {
 
     return `
       <h4>Point Data &mdash; Distance, Angle &amp; Bearing</h4>
-      <p class="hint-text">Standard procedure: set up over the point, sight back to the previous point, zero the horizontal angle, sight ahead to the next point, and record the Interior Angle turned. This point's own line to the next point - its Bearing/Azimuth and Distance - is recorded here too.</p>
+      <p class="hint-text">Each column here is this point's own OUTGOING line (Bearing/Azimuth/Distance/Field Angle, to the next point) - but you record it in two pieces: Bearing/Azimuth is a forward reading taken right here, while Distance and the Interior Angle only become knowable once you've reached the NEXT point and can look back - see that point's own form. This row picks both up automatically once they're entered.</p>
       ${referenceHtml}
       <table class="adjust-table">
         <thead>

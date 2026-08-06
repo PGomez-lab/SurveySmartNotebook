@@ -8,7 +8,7 @@
 const MapView = (() => {
   let map;
   let markerLayer, lineLayer, gridLayer;
-  let legendControl, legendVisible = true;
+  let legendControl, legendVisible = false;
   let selectedIds = [];
   // While connecting points, a just-opened popup can visually cover the next
   // marker the student needs to click (popups anchor above the marker, and
@@ -84,6 +84,8 @@ const MapView = (() => {
       .join("");
   }
 
+  // Built but not shown by default - hidden until the student clicks
+  // Toggle Legend, so it doesn't cover the map on first load.
   function addLegendControl() {
     legendControl = L.control({ position: "bottomright" });
     legendControl.onAdd = () => {
@@ -92,7 +94,10 @@ const MapView = (() => {
       div.innerHTML = `<h4>Legend</h4>${featureLegendRows()}${tripodRow}<hr style="margin:5px 0;border-color:#eee"/>${connectionLegendRows()}`;
       return div;
     };
-    legendControl.addTo(map);
+  }
+
+  function isLegendVisible() {
+    return legendVisible;
   }
 
   function toggleLegend() {
@@ -212,15 +217,37 @@ const MapView = (() => {
     `;
   }
 
+  // Clockwise degrees from true north (the grid's Northing axis) to point b
+  // as seen from point a - the same convention as Traverse's own azimuth
+  // math, kept as a small self-contained copy here rather than reaching into
+  // that module, since it's just two lines.
+  function azimuthBetween(a, b) {
+    const deg = (Math.atan2(b.easting - a.easting, b.northing - a.northing) * 180) / Math.PI;
+    return ((deg % 360) + 360) % 360;
+  }
+
+  // A compass rose anchored at a traverse point, needle rotated to that
+  // point's own outgoing line's true azimuth - the face itself never
+  // rotates, so N stays pointing up (true north on the map) and the angle
+  // between the needle and N visually matches the angle between the dashed
+  // line and true north. Offset up-and-right of the point's own marker
+  // (iconAnchor past the icon's own bounds) so it reads as a badge next to
+  // the point instead of sitting directly on top of it.
+  function compassIcon(azimuthDeg) {
+    return L.divIcon({
+      className: "",
+      html: `<div class="compass-face"><span class="compass-n">N</span><div class="compass-axis-v"></div><div class="compass-axis-h"></div><div class="compass-needle" style="transform:rotate(${azimuthDeg}deg);"></div></div>`,
+      iconSize: [26, 26],
+      iconAnchor: [-7, 33],
+    });
+  }
+
   // A sighting line, whichever module computed it (Leveling's per-point FS/BS
   // or Traverse's per-side-shot reading): an invisible, wider line underneath
   // for a generous, reliable click target (a thin dashed line has gaps a
   // click can land on and miss), plus the actual visible line drawn lighter
   // for a spur (a plain leveling point, or any traverse side shot) than for
-  // the chain the survey actually advances along. Traverse segments also
-  // carry hasTripod - true once a real instrument setup has been placed for
-  // that line, false while it's still falling back to the point itself -
-  // undefined (Leveling) always dashes, matching the old blanket behavior.
+  // the chain the survey actually advances along.
   function drawSightingSegments(segments, style, tooltips) {
     segments.forEach((seg) => {
       const latlngs = [[seg.from.lat, seg.from.lng], [seg.to.lat, seg.to.lng]];
@@ -237,7 +264,7 @@ const MapView = (() => {
         color: style.color,
         weight: seg.isSpur ? 2 : 3,
         opacity: seg.isSpur ? 0.45 : 1,
-        dashArray: seg.hasTripod === false ? null : style.dashArray,
+        dashArray: style.dashArray,
         interactive: false,
       }).addTo(lineLayer);
     });
@@ -259,13 +286,19 @@ const MapView = (() => {
       }
 
       if (conn.type === "traverse") {
-        // Standard procedure sets the instrument up directly over each
-        // station, so its Backsight/Foresight lines route through that
-        // station's own tripod (once placed) instead of one shared
-        // point-to-point chain - see computeStationSightingSegments.
-        drawSightingSegments(Traverse.computeStationSightingSegments(conn), style, {
-          chain: "Click to record this point's Backsight/Foresight reading",
+        // A traverse station sights straight point-to-point, no tripod -
+        // see computeStationSightingSegments.
+        const stationSegments = Traverse.computeStationSightingSegments(conn);
+        drawSightingSegments(stationSegments, style, {
+          chain: "Click to record this point's line to the next one",
           spur: "",
+        });
+        // A small compass at each station, needle pointing along that
+        // station's own outgoing line - lets a student see the angle
+        // between the dashed line and true north at a glance.
+        stationSegments.forEach((seg) => {
+          L.marker([seg.from.lat, seg.from.lng], { icon: compassIcon(azimuthBetween(seg.from, seg.to)), interactive: false })
+            .addTo(markerLayer);
         });
         // A side shot is a detail reading off a station, never a station
         // itself - the chain above never runs through it, so it gets its
@@ -363,5 +396,5 @@ const MapView = (() => {
     return map;
   }
 
-  return { init, render, on, toggleGrid, toggleLegend, setSelectedIds, setSuppressPopups, flyToPoint, fitToPoints, getMap };
+  return { init, render, on, toggleGrid, toggleLegend, isLegendVisible, setSelectedIds, setSuppressPopups, flyToPoint, fitToPoints, getMap };
 })();

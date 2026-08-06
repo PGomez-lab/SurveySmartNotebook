@@ -194,21 +194,23 @@
           <input type="date" id="pf_date" />
         </label>
       </div>
-      <div class="form-row">
-        <label>Latitude
-          <input type="text" id="pf_lat" readonly />
-        </label>
-        <label>Longitude
-          <input type="text" id="pf_lng" readonly />
-        </label>
-      </div>
-      <div class="form-row" id="pf_coordRow">
-        <label>Northing
-          <input type="text" id="pf_northing" readonly />
-        </label>
-        <label>Easting
-          <input type="text" id="pf_easting" readonly />
-        </label>
+      <div id="pf_coordRow">
+        <div class="form-row">
+          <label>Latitude
+            <input type="text" id="pf_lat" readonly />
+          </label>
+          <label>Longitude
+            <input type="text" id="pf_lng" readonly />
+          </label>
+        </div>
+        <div class="form-row">
+          <label>Northing
+            <input type="text" id="pf_northing" readonly />
+          </label>
+          <label>Easting
+            <input type="text" id="pf_easting" readonly />
+          </label>
+        </div>
       </div>
       <div class="form-row">
         <label>Elevation (ft)
@@ -314,7 +316,7 @@
             This is a side shot (a detail point read from the current setup - not part of the traverse chain)
           </label>
           <div id="pf_traverseStationFields">
-            <p class="hint-text" style="margin:0 0 4px;">Standard procedure: set up over this point, sight the previous point, set a zero horizontal angle, then sight the next point and record the interior angle turned. Record this point's line to the NEXT point - its Bearing/Azimuth, Distance, and the Interior Angle turned here.</p>
+            <p class="hint-text" style="margin:0 0 4px;">Bearing/Azimuth ahead - point the instrument/compass toward where you're headed next and read it now, even before that point is placed.</p>
             <div class="form-row">
               <label>Bearing
                 <input type="text" id="pf_fieldBearing" placeholder="N 00&deg;00'00&quot; E" />
@@ -323,12 +325,16 @@
                 <input type="text" id="pf_fieldAzimuth" placeholder="0-360&deg;" />
               </label>
             </div>
-            <label class="form-full">Distance (Taped/EDM)
+
+            <p class="hint-text" id="pf_travLineHeading" style="margin:8px 0 4px;font-weight:600;color:#1c2530;"></p>
+            <label class="form-full" id="pf_travLineRow">Distance (Taped/EDM) - the line you just walked to get here
               <input type="number" step="0.1" id="pf_travDistTaped" placeholder="ft" />
             </label>
-            <label class="form-full">Interior Angle (turned at this point, between the line back to the previous point and the line ahead to the next)
+            <label class="form-full" id="pf_fieldAngleRow">
+              <span id="pf_fieldAngleLabel">What's the interior angle here?</span>
               <input type="text" id="pf_fieldAngle" placeholder="e.g. 89&deg;42'15&quot;" />
             </label>
+            <p class="hint-text" id="pf_travLineHint" style="margin:0;">This point needs a point placed before it - Distance and Interior Angle only exist once there's a line behind you to have walked and turned from.</p>
           </div>
           <div class="hidden" id="pf_sideShotBlock">
             <p class="hint-text" style="margin:0 0 4px;"><strong>Side Shot</strong> - a single angle + distance from wherever the instrument is currently set up, same idea as a leveling run's plain (non-turning) point.</p>

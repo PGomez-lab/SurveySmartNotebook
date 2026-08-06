@@ -383,6 +383,53 @@ textarea { resize: vertical; }
   border-radius: 4px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.4);
 }
+/* A small compass rose next to a traverse point, showing true north (the
+   face never rotates - N is always up, matching the map) alongside a needle
+   rotated to that point's own outgoing line's true azimuth, so the angle
+   between the dashed line and true north reads at a glance. */
+.compass-face {
+  position: relative;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.88);
+  border: 1.5px solid #2c333b;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+}
+.compass-n {
+  position: absolute; top: 0px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 6.5px; font-weight: 700; line-height: 1;
+  color: #c1272d;
+}
+/* Fixed N-S / E-W reference axes, always upright (never rotate with the
+   needle) - so the needle's angle away from true north/east reads visually
+   against a cross, not just a bare circle. */
+.compass-axis-v {
+  position: absolute; top: 2px; left: 50%;
+  width: 1px; height: 22px;
+  margin-left: -0.5px;
+  background: rgba(44,51,59,0.4);
+}
+.compass-axis-h {
+  position: absolute; top: 50%; left: 2px;
+  width: 22px; height: 1px;
+  margin-top: -0.5px;
+  background: rgba(44,51,59,0.4);
+}
+.compass-needle {
+  position: absolute; top: 50%; left: 50%;
+  width: 2px; height: 10px;
+  margin-left: -1px; margin-top: -10px;
+  background: #1f5f8b;
+  transform-origin: 50% 100%;
+}
+.compass-needle::after {
+  content: "";
+  position: absolute; top: -3px; left: -2px;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+  border-bottom: 4px solid #1f5f8b;
+}
 .point-label {
   background: rgba(255,255,255,0.92);
   padding: 1px 5px;

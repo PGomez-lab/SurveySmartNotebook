@@ -291,21 +291,66 @@ const PlanView = (() => {
     // FS/BS or Traverse's per-side-shot reading) - drawn lighter for a spur
     // (a plain leveling point, or any traverse side shot) than for the chain
     // the survey actually advances along, matching the interactive map.
-    // Traverse segments also carry hasTripod - true once a real instrument
-    // setup has been placed for that line, false while it's still falling
-    // back to the point itself - so it draws solid until then. undefined
-    // (Leveling) always uses the connection's own dash pattern.
     function drawSightingSegments(segments, dashPattern) {
       segments.forEach((seg) => {
         ctx.lineWidth = seg.isSpur ? 1.5 : 2.5;
         ctx.globalAlpha = seg.isSpur ? 0.45 : 1;
-        ctx.setLineDash(seg.hasTripod === false ? [] : dashPattern);
+        ctx.setLineDash(dashPattern);
         ctx.beginPath();
         ctx.moveTo(canvasX(seg.from.lng), canvasY(seg.from.lat));
         ctx.lineTo(canvasX(seg.to.lng), canvasY(seg.to.lat));
         ctx.stroke();
       });
       ctx.globalAlpha = 1;
+    }
+
+    // Clockwise degrees from true north to point b as seen from point a -
+    // same convention as Traverse's own azimuth math, kept as a small
+    // self-contained copy here rather than reaching into that module.
+    function azimuthBetween(a, b) {
+      const deg = (Math.atan2(b.easting - a.easting, b.northing - a.northing) * 180) / Math.PI;
+      return ((deg % 360) + 360) % 360;
+    }
+
+    // A small compass rose next to a traverse point - the face never
+    // rotates (N always points up, true north on the map), and the needle
+    // is rotated to that point's own outgoing line's true azimuth, matching
+    // the same badge mapview.js draws for the interactive map.
+    function drawCompass(x, y, azimuthDeg) {
+      const cx = x + 18, cy = y - 18, r = 10;
+      ctx.save();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = "rgba(255,255,255,0.88)";
+      ctx.strokeStyle = "#2c333b";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#c1272d";
+      ctx.font = "bold 7px Segoe UI, Arial";
+      ctx.textAlign = "center";
+      ctx.fillText("N", cx, cy - r + 7);
+      // Fixed N-S / E-W reference axes, always upright - so the needle's
+      // angle away from true north/east reads visually against a cross.
+      ctx.strokeStyle = "rgba(44,51,59,0.4)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r + 2);
+      ctx.lineTo(cx, cy + r - 2);
+      ctx.moveTo(cx - r + 2, cy);
+      ctx.lineTo(cx + r - 2, cy);
+      ctx.stroke();
+      const rad = (azimuthDeg * Math.PI) / 180;
+      const needleLen = r - 2;
+      ctx.strokeStyle = "#1f5f8b";
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.sin(rad) * needleLen, cy - Math.cos(rad) * needleLen);
+      ctx.stroke();
+      ctx.restore();
     }
 
     // ---------- Connections ----------
@@ -324,11 +369,15 @@ const PlanView = (() => {
       }
 
       if (conn.type === "traverse") {
-        // Standard procedure sets the instrument up directly over each
-        // station, so its Backsight/Foresight lines route through that
-        // station's own tripod (once placed) instead of one shared
-        // point-to-point chain - see computeStationSightingSegments.
-        drawSightingSegments(Traverse.computeStationSightingSegments(conn), dashPattern);
+        // A traverse station sights straight point-to-point, no tripod -
+        // see computeStationSightingSegments.
+        const stationSegments = Traverse.computeStationSightingSegments(conn);
+        drawSightingSegments(stationSegments, dashPattern);
+        // A small compass at each station, needle pointing along that
+        // station's own outgoing line.
+        stationSegments.forEach((seg) => {
+          drawCompass(canvasX(seg.from.lng), canvasY(seg.from.lat), azimuthBetween(seg.from, seg.to));
+        });
         // A side shot is a detail reading off a station, never a station
         // itself - the chain above never runs through it, so it gets its
         // own, lighter sighting line (always a spur).
