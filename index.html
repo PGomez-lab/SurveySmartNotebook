@@ -314,52 +314,7 @@
             This is a side shot (a detail point read from the current setup - not part of the traverse chain)
           </label>
           <div id="pf_traverseStationFields">
-            <p class="hint-text" style="margin:0 0 4px;">Standard procedure: the instrument turns an angle BETWEEN two lines - the Backsight (to the previous point) and the Foresight (to the next one). Each line is its own sighting - its own Tripod and its own raw angle reading - since a Backsight can come from a different setup (e.g. a free-station resection) than the Foresight. Record each line's own reading first, then work out the Interior Angle from the two.</p>
-
-            <p class="hint-text" style="margin:8px 0 4px;"><strong>Backsight Line</strong> (to the previous point)</p>
-            <label class="form-full">Angle measured from
-              <select id="pf_travBsAngleFrom">
-                <option value="">(defaults to the previous point)</option>
-              </select>
-            </label>
-            <div class="form-row">
-              <label>Tripod Setup
-                <select id="pf_travBsTripod">
-                  <option value="">no tripod placed yet</option>
-                </select>
-              </label>
-              <label>Angle Reading
-                <input type="text" id="pf_travBsAngleReading" placeholder="e.g. 0&deg;00'00&quot;" />
-              </label>
-            </div>
-            <div class="form-row">
-              <label>Bearing
-                <input type="text" id="pf_travBsBearing" placeholder="N 00&deg;00'00&quot; E" />
-              </label>
-              <label>Azimuth
-                <input type="text" id="pf_travBsAzimuth" placeholder="0-360&deg;" />
-              </label>
-            </div>
-            <label class="form-full">Distance (Taped/EDM)
-              <input type="number" step="0.1" id="pf_travBsDistTaped" placeholder="ft" />
-            </label>
-
-            <p class="hint-text" style="margin:8px 0 4px;"><strong>Foresight Line</strong> (to the next point)</p>
-            <label class="form-full">Angle measured from
-              <select id="pf_travFsAngleFrom">
-                <option value="">(defaults to the next point)</option>
-              </select>
-            </label>
-            <div class="form-row">
-              <label>Tripod Setup
-                <select id="pf_travFsTripod">
-                  <option value="">no tripod placed yet</option>
-                </select>
-              </label>
-              <label>Angle Reading
-                <input type="text" id="pf_travFsAngleReading" placeholder="e.g. 89&deg;42'15&quot;" />
-              </label>
-            </div>
+            <p class="hint-text" style="margin:0 0 4px;">Standard procedure: set up over this point, sight the previous point, set a zero horizontal angle, then sight the next point and record the interior angle turned. Record this point's line to the NEXT point - its Bearing/Azimuth, Distance, and the Interior Angle turned here.</p>
             <div class="form-row">
               <label>Bearing
                 <input type="text" id="pf_fieldBearing" placeholder="N 00&deg;00'00&quot; E" />
@@ -369,11 +324,9 @@
               </label>
             </div>
             <label class="form-full">Distance (Taped/EDM)
-              <input type="number" step="0.1" id="pf_travFsDistTaped" placeholder="ft" />
+              <input type="number" step="0.1" id="pf_travDistTaped" placeholder="ft" />
             </label>
-
-            <p class="hint-text" style="margin:8px 0 4px;">Now work out the Interior Angle from your two readings above.</p>
-            <label class="form-full">Interior Angle (work out by hand: Foresight reading &minus; Backsight reading)
+            <label class="form-full">Interior Angle (turned at this point, between the line back to the previous point and the line ahead to the next)
               <input type="text" id="pf_fieldAngle" placeholder="e.g. 89&deg;42'15&quot;" />
             </label>
           </div>
@@ -382,7 +335,7 @@
             <div class="form-row">
               <label>Sighted From
                 <select id="pf_sideShotFrom">
-                  <option value="">no tripod or point placed yet</option>
+                  <option value="">no point placed yet</option>
                 </select>
               </label>
               <label>Angle

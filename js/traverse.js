@@ -10,27 +10,25 @@
  * in by the student by hand, from their own calculations - the app is a
  * structured worksheet/field book, not a calculator.
  *
- * Field Angle/Field Bearing/Field Azimuth - a theodolite/total station
- * displays horizontal angle, vertical angle, and slope distance, and once
+ * A traverse station is purely horizontal control - point to point, no
+ * tripod, no elevation. Set up over the point, sight back to the previous
+ * one, zero the horizontal angle, sight ahead to the next one, and record:
+ * the Interior Angle turned, and this point's own line to the next one
+ * (Bearing/Azimuth/Distance). Field Angle/Bearing/Azimuth - a theodolite/
+ * total station displays horizontal angle and slope distance, and once
  * oriented to a known backsight can display bearing/azimuth directly - can
  * be jotted down right on the point itself the moment it's added.
  * computeLegs() seeds each station's row from the point's own quick-entry
  * values, then lets anything typed directly into the table below override
  * it, same as a later, separate observation would in a paper book.
- *
- * BS/FS/HI/Field Distance (elevation carried through the traverse the same
- * way a level run does) have no point-level quick-entry - unlike a leveling
- * run's benchmark/turning points, a traverse station is one instrument setup
- * sighting both directions, so there's nothing station-specific to jot down
- * before the whole sequence exists. Along with Correction/Adjusted Angle/
- * Bearing/Azimuth (which depend on the whole traverse's angular closure,
- * not knowable until every station has been surveyed), they're only ever
- * entered in the Traverse Table below, after the fact.
+ * Correction/Adjusted Angle/Bearing/Azimuth depend on the whole traverse's
+ * angular closure (not knowable until every station has been surveyed), so
+ * those are only ever entered in the Traverse Table below, after the fact.
  *
  * Two tables, matching a real traverse computation:
- *   1. Station Data - BS/FS/HI/Elevation (carrying elevation through the
- *      traverse the same way a level run does) plus Distance/Angle/Bearing/
- *      Azimuth for each station's outgoing leg.
+ *   1. Station Data - Distance/Angle/Bearing/Azimuth for each station's
+ *      outgoing leg (no elevation - that's Leveling's job, a separate
+ *      survey type).
  *   2. Latitude, Departure & Coordinate Adjustment - Latitude -> correction
  *      -> adjusted (calculated) latitude, with the Actual latitude (from the
  *      map) alongside for comparison; same for Departure. This is the step
@@ -39,6 +37,30 @@
  */
 
 const Traverse = (() => {
+  const isTraverseCategory = State.isTraverseCategory;
+
+  // The sighting line for each side shot - a detail point read (angle +
+  // distance) from whichever station was active when it was added - but
+  // never part of the station chain itself (see State's syncOneAutoRun,
+  // which excludes side shots from pointIds). Mirrors
+  // Leveling.computeAnchorSegments; returns { from, to, pointId, isSpur }
+  // segments (from/to are {lat,lng} objects). isSpur is always true here - a
+  // side shot never continues the chain, unlike a leveling turning point
+  // which sometimes does.
+  function computeSideShotSegments() {
+    const sideShots = State.getProject().points.filter(
+      (p) => isTraverseCategory(p.surveyCategory) && p.isSideShot
+    );
+    const segments = [];
+    sideShots.forEach((p) => {
+      if (!p.sightedFromId) return;
+      const from = State.getPoint(p.sightedFromId);
+      if (!from) return;
+      segments.push({ from, to: p, pointId: p.id, isSpur: true });
+    });
+    return segments;
+  }
+
   const ANGLE_TYPES = {
     interior: "Interior Angle",
     angleRight: "Angle to the Right",
@@ -99,9 +121,32 @@ const Traverse = (() => {
     return { prev, next };
   }
 
+  // The sighting line a traverse station actually makes to the NEXT station
+  // - straight point to point, no tripod. (The "backsight" to the previous
+  // point is just that same previous point's own outgoing line, sighted in
+  // reverse - it doesn't need a second segment here.) Returns { from, to,
+  // pointId, isSpur } segments - isSpur is always false, since these ARE the
+  // chain a traverse actually runs along (see computeSideShotSegments for
+  // the non-continuing kind). Mirrors Leveling.computeAnchorSegments.
+  function computeStationSightingSegments(conn) {
+    const closed = conn.surveyType === "closed";
+    const stations = conn.pointIds;
+    const segments = [];
+    for (let i = 0; i < stations.length; i++) {
+      const pt = State.getPoint(stations[i]);
+      if (!pt) continue;
+      const { next } = neighborsFor(stations, i, closed);
+      if (next) {
+        const nextPt = State.getPoint(next);
+        if (nextPt) segments.push({ from: pt, to: nextPt, pointId: pt.id, isSpur: false });
+      }
+    }
+    return segments;
+  }
+
   /** One row per STATION (not per leg) - the last station of an open traverse
-   * still needs a row for its BS/FS/HI/Elevation even though it has no
-   * outgoing leg to report distance/angle/bearing for. */
+   * still needs a row (it has no outgoing leg to report distance/angle/
+   * bearing for, but it's still a real point in the sequence). */
   function computeLegs(conn) {
     const closed = conn.surveyType === "closed";
     const stations = conn.pointIds.slice();
@@ -116,16 +161,17 @@ const Traverse = (() => {
       const hasOutgoing = i < legCount;
       const to = hasOutgoing ? pts[closed ? (i + 1) % n : i + 1] : null;
       const { prev, next } = neighborsFor(stations, i, closed);
-      // Seed Field Angle/Bearing/Azimuth from the point's own quick-entry
-      // readings (recorded when the point was added/edited on the map),
-      // then let anything already entered here in the table override it.
-      // BS/FS/HI/Field Distance and Corrected/Adjusted values are NOT
-      // seeded from the point - the former have no point-level quick-entry
-      // (Traverse's HI/BS/FS/Distance are entered here, once the whole
-      // station sequence is known), and the latter depend on the whole
-      // traverse's angular closure - so both only ever come from this table.
+      // Seed Field Angle/Bearing/Azimuth/Distance from the point's own
+      // quick-entry readings (recorded when the point was added/edited on
+      // the map), then let anything already entered here in the table
+      // override it. Corrected/Adjusted values are NOT seeded - they depend
+      // on the whole traverse's angular closure, so they only ever come
+      // from this table.
       const fd = Object.assign(
-        { fieldAngle: from.fieldAngle, fieldBearing: from.fieldBearing, fieldAzimuth: from.fieldAzimuth },
+        {
+          fieldAngle: from.fieldAngle, fieldBearing: from.fieldBearing, fieldAzimuth: from.fieldAzimuth,
+          fieldDistance: from.fsDistTaped,
+        },
         fieldData[from.id] || {}
       );
 
@@ -143,13 +189,16 @@ const Traverse = (() => {
         fromId: from.id,
         toId: to ? to.id : null,
         hasOutgoing,
+        // The Interior Angle is turned BETWEEN the backsight (to prev) and
+        // the foresight (to next) - needs both to exist. Bearing/Azimuth/
+        // Distance describe this point's own outgoing line, so they only
+        // need hasOutgoing.
         hasAngle: !!(prev && next),
         actualDistance,
         actualAzimuth,
         actualBearing,
         actualLatitude,
         actualDeparture,
-        actualElev: from.elevation === null || from.elevation === undefined ? null : from.elevation,
         unit,
         fd,
       };
@@ -207,9 +256,9 @@ const Traverse = (() => {
     const referenceHtml = (() => {
       if (!conn.pointIds.length) return "";
       if (!data.closed) return `<p class="hint-text">Open traverse &mdash; no angular closure check applies. Compare your Adjusted values to the Actual (map) columns yourself.</p>`;
-      if (data.n < 3) return `<p class="hint-text">Need at least 3 stations for a closed-loop angle check.</p>`;
+      if (data.n < 3) return `<p class="hint-text">Need at least 3 points for a closed-loop angle check.</p>`;
       const theoretical = (data.n - 2) * 180;
-      return `<p class="hint-text">Closed traverse, ${data.n} stations. Reference: interior angles of a closed polygon sum to (n&minus;2)&times;180&deg; = <strong>${theoretical}&deg;</strong>. This reference assumes interior angles - convert first if you're using a different angle type.</p>`;
+      return `<p class="hint-text">Closed traverse, ${data.n} points. Reference: interior angles of a closed polygon sum to (n&minus;2)&times;180&deg; = <strong>${theoretical}&deg;</strong>. This reference assumes interior angles - convert first if you're using a different angle type.</p>`;
     })();
 
     const rowsHtml = data.rows
@@ -218,47 +267,40 @@ const Traverse = (() => {
         (r) => `
         <tr>
           <td>${r.hasOutgoing ? `${r.fromId} &rarr; ${r.toId}` : `${r.fromId} <span class="hint-text">(end)</span>`}</td>
-          <td>${fieldInput(conn.id, r.pointId, "bs", r.fd.bs, "BS")}</td>
-          <td>${fieldInput(conn.id, r.pointId, "fs", r.fd.fs, "FS")}</td>
-          <td>${fieldInput(conn.id, r.pointId, "hi", r.fd.hi, "HI")}</td>
-          <td>${fieldInput(conn.id, r.pointId, "elevation", r.fd.elevation, "elev")}</td>
-          <td>${fmt(r.actualElev)}</td>
-          <td>${r.hasOutgoing ? fieldInput(conn.id, r.pointId, "fieldDistance", r.fd.fieldDistance, "ft") : "&mdash;"}</td>
-          <td>${r.hasOutgoing ? `${fmt(r.actualDistance)} ${r.unit}` : "&mdash;"}</td>
           <td>${r.hasAngle ? fieldInput(conn.id, r.pointId, "fieldAngle", r.fd.fieldAngle, "D°M'S\"", "text") : "&mdash;"}</td>
           <td>${r.hasAngle ? fieldInput(conn.id, r.pointId, "correction", r.fd.correction, "&plusmn;", "text") : "&mdash;"}</td>
           <td>${r.hasAngle ? fieldInput(conn.id, r.pointId, "adjustedAngle", r.fd.adjustedAngle, "D°M'S\"", "text") : "&mdash;"}</td>
           <td>${r.hasOutgoing ? fieldInput(conn.id, r.pointId, "fieldBearing", r.fd.fieldBearing, "N 00°00'00\" E", "text") : "&mdash;"}</td>
           <td>${r.hasOutgoing ? fieldInput(conn.id, r.pointId, "fieldAzimuth", r.fd.fieldAzimuth, "0-360°", "text") : "&mdash;"}</td>
+          <td>${r.hasOutgoing ? fieldInput(conn.id, r.pointId, "fieldDistance", r.fd.fieldDistance, "ft") : "&mdash;"}</td>
           <td>${r.hasOutgoing ? fieldInput(conn.id, r.pointId, "adjustedBearing", r.fd.adjustedBearing, "N 00°00'00\" E", "text") : "&mdash;"}</td>
           <td>${r.hasOutgoing ? fieldInput(conn.id, r.pointId, "adjustedAzimuth", r.fd.adjustedAzimuth, "0-360°", "text") : "&mdash;"}</td>
           <td>${r.hasOutgoing ? r.actualBearing : "&mdash;"}</td>
           <td>${r.hasOutgoing ? toDms(r.actualAzimuth) : "&mdash;"}</td>
+          <td>${r.hasOutgoing ? `${fmt(r.actualDistance)} ${r.unit}` : "&mdash;"}</td>
         </tr>
       `
       )
       .join("");
 
     return `
-      <h4>Station Data &mdash; Elevation, Distance, Angle &amp; Bearing</h4>
+      <h4>Point Data &mdash; Distance, Angle &amp; Bearing</h4>
+      <p class="hint-text">Standard procedure: set up over the point, sight back to the previous point, zero the horizontal angle, sight ahead to the next point, and record the Interior Angle turned. This point's own line to the next point - its Bearing/Azimuth and Distance - is recorded here too.</p>
       ${referenceHtml}
       <table class="adjust-table">
         <thead>
           <tr>
-            <th rowspan="2">Station</th>
-            <th colspan="5">Elevation (carried through the traverse)</th>
-            <th colspan="2">Distance</th>
+            <th rowspan="2">Point</th>
             <th colspan="3">Angle (your work)</th>
-            <th colspan="4">Bearing / Azimuth</th>
-            <th colspan="2">Actual (map)</th>
+            <th colspan="3">This Point's Line (to the next point)</th>
+            <th colspan="2">Adjusted</th>
+            <th colspan="3">Actual (map)</th>
           </tr>
           <tr>
-            <th>BS</th><th>FS</th><th>HI</th><th>Elev.</th><th>Actual Elev.</th>
-            <th>Field</th><th>Actual</th>
             <th>Field ${angleLabel}</th><th>Corr.</th><th>Adj. ${angleLabel}</th>
-            <th>Field Bearing</th><th>Field Azimuth</th>
+            <th>Bearing</th><th>Azimuth</th><th>Dist.</th>
             <th>Adj. Bearing</th><th>Adj. Azimuth</th>
-            <th>Bearing</th><th>Azimuth</th>
+            <th>Bearing</th><th>Azimuth</th><th>Distance</th>
           </tr>
         </thead>
         <tbody>${rowsHtml}</tbody>
@@ -267,14 +309,7 @@ const Traverse = (() => {
         <strong>Your Angular Closure Check</strong>
         &Sigma; Field Angles: ${checkInput(conn.id, "sumAngles", checks.sumAngles, "deg")}&deg; &nbsp;
         Angular Misclosure: ${checkInput(conn.id, "angularMisclosure", checks.angularMisclosure, "&plusmn;")}&deg; &nbsp;
-        Correction / Station: ${checkInput(conn.id, "correctionPerStation", checks.correctionPerStation, "&plusmn;")}&deg;
-      </div>
-      <div class="closure-check">
-        <strong>Your Elevation Check</strong>
-        &Sigma; BS: ${checkInput(conn.id, "sumBs", checks.sumBs, "ft")} ft &nbsp;
-        &Sigma; FS: ${checkInput(conn.id, "sumFs", checks.sumFs, "ft")} ft &nbsp;
-        Elev(last) &minus; Elev(first): ${checkInput(conn.id, "elevDiff", checks.elevDiff, "ft")} ft
-        <p class="hint-text">Same idea as a differential-leveling arithmetic check: &Sigma;BS &minus; &Sigma;FS should equal Elev(last) &minus; Elev(first).</p>
+        Correction / Point: ${checkInput(conn.id, "correctionPerStation", checks.correctionPerStation, "&plusmn;")}&deg;
       </div>
     `;
   }
@@ -321,7 +356,7 @@ const Traverse = (() => {
 
     return `
       <h4>Latitude, Departure &amp; Coordinate Adjustment</h4>
-      <p class="hint-text">Latitude = Length &times; cos(bearing); Departure = Length &times; sin(bearing). For each course: your Latitude, your Correction, then your Adjusted (calculated) Latitude - with the Actual Latitude (from the map's real coordinates) alongside to check against. Same for Departure. ${data.closed ? "Balance the closed figure (e.g. compass rule) and c" : "C"}arry adjusted coordinates forward from a known starting station.</p>
+      <p class="hint-text">Latitude = Length &times; cos(bearing); Departure = Length &times; sin(bearing). For each course: your Latitude, your Correction, then your Adjusted (calculated) Latitude - with the Actual Latitude (from the map's real coordinates) alongside to check against. Same for Departure. ${data.closed ? "Balance the closed figure (e.g. compass rule) and c" : "C"}arry adjusted coordinates forward from a known starting point.</p>
       <table class="adjust-table">
         <thead>
           <tr>
@@ -338,7 +373,7 @@ const Traverse = (() => {
       </table>
       <table class="adjust-table">
         <thead>
-          <tr><th>Station</th><th>Adj. Northing</th><th>Adj. Easting</th><th>Actual Northing (map)</th><th>Actual Easting (map)</th></tr>
+          <tr><th>Point</th><th>Adj. Northing</th><th>Adj. Easting</th><th>Actual Northing (map)</th><th>Actual Easting (map)</th></tr>
         </thead>
         <tbody>${coordRows}</tbody>
       </table>
@@ -354,12 +389,50 @@ const Traverse = (() => {
     `;
   }
 
+  // Read-only - a side shot's angle/distance/stadia are entered right on the
+  // point itself (see the point modal's Side Shot block), not here; this is
+  // just a review table so a student can check them without hunting through
+  // map clicks one at a time, same idea as the Leveling Table showing every
+  // point including its plain (non-turning) ones.
+  function renderSideShotsTable() {
+    const sideShots = State.getProject().points.filter(
+      (p) => isTraverseCategory(p.surveyCategory) && p.isSideShot
+    );
+    if (!sideShots.length) return "";
+    const rows = sideShots
+      .map(
+        (p) => `
+        <tr>
+          <td>${p.id}</td>
+          <td>${p.sightedFromId || "&mdash;"}</td>
+          <td>${p.sideShotAngle || "&mdash;"}</td>
+          <td>${p.sideShotBearing || "&mdash;"}</td>
+          <td>${p.sideShotAzimuth || "&mdash;"}</td>
+          <td>${fmt(p.sideShotDistTaped, 1)}</td>
+          <td>${fmt(p.sideShotStadiaTop)}</td>
+          <td>${fmt(p.sideShotStadiaBottom)}</td>
+          <td>${p.description || ""}</td>
+        </tr>
+      `
+      )
+      .join("");
+    return `
+      <h4>Side Shots <span class="hint-text">(detail points - not part of the traverse chain)</span></h4>
+      <table class="adjust-table">
+        <thead>
+          <tr><th>Point</th><th>Sighted From</th><th>Angle</th><th>Bearing</th><th>Azimuth</th><th>Dist. (Taped)</th><th>Stadia Top</th><th>Stadia Bottom</th><th>Description</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
   function renderConnectionBlock(conn) {
     const data = computeLegs(conn);
     return `
       <div class="survey-block" data-conn-id="${conn.id}">
         <div class="survey-block-header">
-          <h3>${conn.name} <span class="hint-text">(${data.n} station${data.n === 1 ? "" : "s"}, ${data.closed ? "closed" : "open"})</span></h3>
+          <h3>${conn.name} <span class="hint-text">(${data.n} point${data.n === 1 ? "" : "s"}, ${data.closed ? "closed" : "open"})</span></h3>
           <div class="survey-block-actions">
             <label class="inline-label">Angle Type
               <select data-conn-meta="${conn.id}" data-field="angleType">
@@ -371,6 +444,7 @@ const Traverse = (() => {
         </div>
         ${renderStationTable(conn, data)}
         ${renderLatDepTable(conn, data)}
+        ${renderSideShotsTable()}
       </div>
     `;
   }
@@ -382,7 +456,7 @@ const Traverse = (() => {
       container.innerHTML = `<p class="empty-hint">No traverse yet. Set the project's <strong>Type of Survey</strong> (header) to Traverse - Open or Closed, then add at least 2 points - this table builds itself automatically as you add them.</p>`;
       return;
     }
-    const intro = `<p class="hint-text convention-note">Enter your own field readings and hand-worked correction/adjusted/latitude-departure values. Pick the <strong>Angle Type</strong> your course uses so the column headers match. The app only fills in the Actual (map) columns and known station coordinates, so you can check your work against ground truth - it never computes the adjustment for you.</p>`;
+    const intro = `<p class="hint-text convention-note">Enter your own field readings and hand-worked correction/adjusted/latitude-departure values. Pick the <strong>Angle Type</strong> your course uses so the column headers match. The app only fills in the Actual (map) columns and known point coordinates, so you can check your work against ground truth - it never computes the adjustment for you.</p>`;
     container.innerHTML = intro + conns.map(renderConnectionBlock).join("");
   }
 
@@ -422,11 +496,9 @@ const Traverse = (() => {
 
   return {
     computeLegs,
-    legDistance,
-    azimuthBetween,
-    azimuthToBearingString,
+    computeSideShotSegments,
+    computeStationSightingSegments,
     toDms,
-    ANGLE_TYPES,
     init,
     renderPanel,
   };

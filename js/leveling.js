@@ -24,15 +24,16 @@
  * new setup to sight the benchmark again - a turning point in every way but
  * name - while an open run's last station is a true dead end (Foresight
  * only, the run just ends there). Every other station gets a Foresight if
- * it's just a shot, or both if it's a turning point (see the TP? checkbox).
+ * it's just a shot, or both if it's a turning point (a role set on the point
+ * itself, in its point-form modal).
  *
- * This module does NOT compute HI, Elevation, stadia distance, or closure for
- * the student. Those are the calculations the course is teaching, so every
- * one of those cells is a plain input the student fills in by hand from their
- * own BS/FS/stadia readings. The only thing this module computes is the
- * ACTUAL elevation of each point - a lookup of the known/given elevation
- * already stored on that point - shown alongside their work purely as a
- * reference to check against.
+ * This module does NOT compute HI, Elevation, or closure for the student.
+ * Those are the calculations the course is teaching, so every one of those
+ * cells is a plain input the student fills in by hand from their own
+ * BS/FS/stadia readings. The table itself only shows the raw field readings -
+ * PT, BS, HI, FS, Elevation, and each shot's stadia top/bottom and taped
+ * distance - the Actual Elevation lookup used for the closure reference below
+ * the table is computed here but not rendered as its own column.
  */
 
 const Leveling = (() => {
@@ -83,10 +84,9 @@ const Leveling = (() => {
       );
       const isFirst = i === 0;
       const isLast = i === n - 1;
-      // isTurningPoint is a survey ROLE (kept on the point separately from
-      // Feature Type - see state.js) - the table's own checkbox (fd, i.e.
-      // conn.fieldData) can still override it per-run if it differs here.
-      const isTurningPoint = !isFirst && !isLast && (fd.isTurningPoint !== undefined ? !!fd.isTurningPoint : !!pt.isTurningPoint);
+      // isTurningPoint is a survey ROLE, set on the point itself (in its
+      // point-form modal) - see state.js.
+      const isTurningPoint = !isFirst && !isLast && !!pt.isTurningPoint;
       // In a closed run the loop comes back around onto the benchmark
       // itself - no separate "closing point" needed (same idea as a closed
       // Traverse never repeating its first station's ID). That makes the
@@ -111,6 +111,53 @@ const Leveling = (() => {
     return { rows, closed, n, unit: "ft" };
   }
 
+  // The physical sighting lines a leveling run's rod+tripod actually make:
+  // with one rod and one instrument, the tripod stays put for every plain
+  // Foresight shot (only the rod moves) and only relocates to a new setup at
+  // a turning point (or, for a closed run, to close the loop back onto the
+  // benchmark). Each reading prefers the ACTUAL tripod location the student
+  // recorded (point.fsTripodId/bsTripodId) - once placed, sighting lines
+  // route through it instead of straight rod-to-rod. Without a tripod
+  // placed for a given setup yet, falls back to the previous point's own
+  // location as an approximation, so this still works before any tripod
+  // exists. Returns { from, to, pointId, isSpur } segments (from/to are
+  // {lat,lng} - never just conn.pointIds chained in sequence) - pointId is
+  // whichever point's rod is being sighted, for click-to-edit. isSpur marks
+  // a plain point's Foresight (Benchmark/Turning Point/closing shots are the
+  // "chain" the survey actually advances along; a plain point is just a
+  // side reading - its own Foresight, distance, and stadia - that the path
+  // never continues from) so a map can draw it lighter than the chain.
+  // Shared by MapView and PlanView so both stay consistent with what the
+  // Leveling Table itself considers a turning point.
+  function computeAnchorSegments(conn) {
+    const data = computeRows(conn);
+    const ids = conn.pointIds;
+    const segments = [];
+    let activeAnchor = null; // {lat,lng} - last known tripod, or a point standing in for one
+    for (let i = 0; i < ids.length; i++) {
+      const row = data.rows[i];
+      if (!row) continue;
+      const pt = State.getPoint(ids[i]);
+      if (!pt) continue;
+
+      if (row.hasFsShot && !row.isFirst) {
+        const fsTripod = pt.fsTripodId ? State.getTripod(pt.fsTripodId) : null;
+        const from = fsTripod || activeAnchor;
+        if (from) segments.push({ from, to: pt, pointId: pt.id, isSpur: !row.hasBsShot });
+      }
+      if (row.hasBsShot) {
+        const bsTripod = pt.bsTripodId ? State.getTripod(pt.bsTripodId) : null;
+        if (bsTripod) segments.push({ from: bsTripod, to: pt, pointId: pt.id, isSpur: false });
+        activeAnchor = bsTripod || pt;
+      }
+    }
+    if (data.closed && activeAnchor) {
+      const bm = State.getPoint(ids[0]);
+      if (bm) segments.push({ from: activeAnchor, to: bm, pointId: bm.id, isSpur: false });
+    }
+    return segments;
+  }
+
   function rowHtml(conn, r) {
     if (!r) return "";
     // Foresight before Backsight, matching the order they actually happen
@@ -122,37 +169,29 @@ const Leveling = (() => {
     const hiCell = r.hasBsShot ? fieldInput(conn.id, r.pointId, "hi", r.fd.hi, "HI") : "&mdash;";
     const fsDist = r.hasFsShot
       ? [
-          fieldInput(conn.id, r.pointId, "fsDistTaped", r.fd.fsDistTaped, "taped"),
-          fieldInput(conn.id, r.pointId, "fsDistStadia", r.fd.fsDistStadia, "calc"),
           fieldInput(conn.id, r.pointId, "fsStadiaTop", r.fd.fsStadiaTop, "top"),
           fieldInput(conn.id, r.pointId, "fsStadiaBottom", r.fd.fsStadiaBottom, "bot"),
+          fieldInput(conn.id, r.pointId, "fsDistTaped", r.fd.fsDistTaped, "dist"),
         ]
-      : ["&mdash;", "&mdash;", "&mdash;", "&mdash;"];
+      : ["&mdash;", "&mdash;", "&mdash;"];
     const bsDist = r.hasBsShot
       ? [
-          fieldInput(conn.id, r.pointId, "bsDistTaped", r.fd.bsDistTaped, "taped"),
-          fieldInput(conn.id, r.pointId, "bsDistStadia", r.fd.bsDistStadia, "calc"),
           fieldInput(conn.id, r.pointId, "bsStadiaTop", r.fd.bsStadiaTop, "top"),
           fieldInput(conn.id, r.pointId, "bsStadiaBottom", r.fd.bsStadiaBottom, "bot"),
+          fieldInput(conn.id, r.pointId, "bsDistTaped", r.fd.bsDistTaped, "dist"),
         ]
-      : ["&mdash;", "&mdash;", "&mdash;", "&mdash;"];
-    const tpCell = !r.isFirst && !r.isLast
-      ? `<input type="checkbox" data-conn="${conn.id}" data-point="${r.pointId}" data-field="isTurningPoint" ${r.isTurningPoint ? "checked" : ""} title="New instrument setup here?" />`
-      : "";
+      : ["&mdash;", "&mdash;", "&mdash;"];
     const startLabel = r.isFirst ? (r.hasFsShot ? " <span class=\"hint-text\">(start / close)</span>" : " <span class=\"hint-text\">(start)</span>") : "";
     const closeLabel = r.isLast && !r.isFirst ? ` <span class="hint-text">(${r.isClosingSetup ? "final setup" : "close"})</span>` : "";
     return `
       <tr class="${r.isTurningPoint || r.isClosingSetup ? "tp-row" : ""}">
         <td>${r.pointId}${startLabel}${closeLabel}</td>
-        <td>${tpCell}</td>
-        <td>${fsCell}</td>
         <td>${bsCell}</td>
         <td>${hiCell}</td>
+        <td>${fsCell}</td>
         <td>${fieldInput(conn.id, r.pointId, "elevation", r.fd.elevation, "elev")}</td>
-        <td>${fmt(r.actualElev)}</td>
-        <td>${fieldInput(conn.id, r.pointId, "adjustedElev", r.fd.adjustedElev, "adj")}</td>
-        <td>${fsDist[0]}</td><td>${fsDist[1]}</td><td>${fsDist[2]}</td><td>${fsDist[3]}</td>
-        <td>${bsDist[0]}</td><td>${bsDist[1]}</td><td>${bsDist[2]}</td><td>${bsDist[3]}</td>
+        <td>${fsDist[0]}</td><td>${fsDist[1]}</td><td>${fsDist[2]}</td>
+        <td>${bsDist[0]}</td><td>${bsDist[1]}</td><td>${bsDist[2]}</td>
       </tr>
     `;
   }
@@ -165,9 +204,9 @@ const Leveling = (() => {
     const benchmarkRow = data.rows[0];
     const checks = conn.checks || {};
     const referenceHtml = (() => {
-      if (!data.closed) return `<p class="hint-text">Open level run &mdash; no closure reference. Compare your final computed elevation to the Actual Elev. column yourself.</p>`;
+      if (!data.closed) return `<p class="hint-text">Open level run &mdash; no closure reference. Compare your final computed Elevation to the point's own known elevation yourself.</p>`;
       if (!benchmarkRow || benchmarkRow.actualElev === null) return `<p class="hint-text">The benchmark needs a known elevation entered (on the point itself) before you can check closure against it.</p>`;
-      return `<p class="hint-text">Closed level run. Reference: the benchmark's known elevation is <strong>${fmt(benchmarkRow.actualElev)} ft</strong> - the loop closes back onto it, so fill in the benchmark's own Foresight (its row above) once you've walked the whole loop. Work out your own misclosure and distance-proportional correction, then compare your Adjusted Elevation to this value.</p>`;
+      return `<p class="hint-text">Closed level run. Reference: the benchmark's known elevation is <strong>${fmt(benchmarkRow.actualElev)} ft</strong> - the loop closes back onto it, so fill in the benchmark's own Foresight (its row above) once you've walked the whole loop. Work out your own misclosure and distance-proportional correction, then compare your final Elevation to this value.</p>`;
     })();
 
     return `
@@ -180,19 +219,16 @@ const Leveling = (() => {
           <thead>
             <tr>
               <th rowspan="2">PT</th>
-              <th rowspan="2">TP?</th>
-              <th rowspan="2">FS</th>
               <th rowspan="2">BS</th>
               <th rowspan="2">HI</th>
-              <th rowspan="2">Elevation</th>
-              <th rowspan="2">Actual Elev.</th>
-              <th rowspan="2">Adj. Elev.</th>
-              <th colspan="4">Foresight Shot Distance (sighting this point)</th>
-              <th colspan="4">Backsight Shot Distance (starting a new setup here)</th>
+              <th rowspan="2">FS</th>
+              <th rowspan="2">ELEV.</th>
+              <th colspan="3">Foresight Shot (sighting this point)</th>
+              <th colspan="3">Backsight Shot (starting a new setup here)</th>
             </tr>
             <tr>
-              <th>Taped</th><th>Calculated</th><th>Top</th><th>Bottom</th>
-              <th>Taped</th><th>Calculated</th><th>Top</th><th>Bottom</th>
+              <th>Top Stadia</th><th>Bottom Stadia</th><th>DIST.</th>
+              <th>Top Stadia</th><th>Bottom Stadia</th><th>DIST.</th>
             </tr>
           </thead>
           <tbody>${data.rows.map((r) => rowHtml(conn, r)).join("")}</tbody>
@@ -202,7 +238,7 @@ const Leveling = (() => {
           &Sigma; BS: ${checkInput(conn.id, "sumBs", checks.sumBs, "ft")} ft &nbsp;
           &Sigma; FS: ${checkInput(conn.id, "sumFs", checks.sumFs, "ft")} ft &nbsp;
           Elev(last) &minus; Elev(first): ${checkInput(conn.id, "elevDiff", checks.elevDiff, "ft")} ft
-          <p class="hint-text">These two should match: &Sigma;BS &minus; &Sigma;FS = Elev(last) &minus; Elev(first). Do this check on your own numbers before comparing anything to Actual Elev.</p>
+          <p class="hint-text">These two should match: &Sigma;BS &minus; &Sigma;FS = Elev(last) &minus; Elev(first). Do this check on your own numbers before comparing anything to a known elevation.</p>
         </div>
         ${referenceHtml}
       </div>
@@ -216,7 +252,7 @@ const Leveling = (() => {
       container.innerHTML = `<p class="empty-hint">No leveling run yet. Set the project's <strong>Type of Survey</strong> (header) to Differential Leveling - Points or Loop, then add at least 2 points - this table builds itself automatically as you add them.</p>`;
       return;
     }
-    const intro = `<p class="hint-text convention-note">Enter your own BS/FS/stadia readings, and work out HI, Elevation, Distance (stadia interval &times; stadia constant K, typically K=100), and (for closed runs) the Adjusted Elevation by hand. With one rod and one instrument, a turning point is sighted from two different setups - the incoming Foresight Shot and, once the instrument moves and the rod stays put, the outgoing Backsight Shot for the next setup - so each gets its own distance, recorded both by stadia and by tape. For a closed run, the loop closes back onto the benchmark itself - no separate closing point needed - so once you've walked the whole loop, come back and fill in the benchmark's own Foresight Shot. Do your arithmetic check (&Sigma;BS &minus; &Sigma;FS) before comparing anything to Actual Elev., which is only the point's known elevation, not an answer key.</p>`;
+    const intro = `<p class="hint-text convention-note">Enter your own BS/HI/FS/Elevation and stadia readings (rounded to the nearest hundredth). With one rod and one instrument, a turning point is sighted from two different setups - the incoming Foresight Shot and, once the instrument moves and the rod stays put, the outgoing Backsight Shot for the next setup - so each gets its own Top/Bottom Stadia and Distance. A point's Turning Point role is set in its own point-form. For a closed run, the loop closes back onto the benchmark itself - no separate closing point needed - so once you've walked the whole loop, come back and fill in the benchmark's own Foresight Shot. Do your arithmetic check (&Sigma;BS &minus; &Sigma;FS) below before comparing your Elevation column to the closure reference.</p>`;
     container.innerHTML = intro + conns.map(renderConnectionBlock).join("");
   }
 
@@ -225,13 +261,8 @@ const Leveling = (() => {
     container.addEventListener("change", (e) => {
       const input = e.target.closest("input[data-conn][data-point]");
       if (input) {
-        const value = input.type === "checkbox" ? input.checked : (input.value === "" ? null : parseFloat(input.value));
+        const value = input.value === "" ? null : parseFloat(input.value);
         State.updateFieldData(input.dataset.conn, input.dataset.point, { [input.dataset.field]: value });
-        // The Turning Point? checkbox changes which cells (BS/HI) show an
-        // input vs "-" in this same row - that's a structural change, unlike
-        // the rest of this table's fields, so it needs its own re-render
-        // (infrequent/deliberate, unlike rapid Tab-through-numbers entry).
-        if (input.type === "checkbox") renderPanel(State.getProject());
         return;
       }
       const checkEl = e.target.closest("input[data-conn-check]");
@@ -246,5 +277,5 @@ const Leveling = (() => {
     });
   }
 
-  return { computeRows, init, renderPanel };
+  return { computeRows, computeAnchorSegments, init, renderPanel };
 })();

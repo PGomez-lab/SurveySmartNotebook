@@ -73,9 +73,14 @@ const MapView = (() => {
 
   function connectionLegendRows() {
     return Object.entries(State.CONNECTION_STYLES)
-      .map(
-        ([, s]) => `<div class="lg-item"><span class="lg-line" style="border-color:${s.color}"></span>${s.label}</div>`
-      )
+      .map(([type, s]) => {
+        const row = `<div class="lg-item"><span class="lg-line" style="border-color:${s.color}"></span>${s.label}</div>`;
+        // Leveling and Traverse both distinguish their chain (Benchmark/
+        // Turning Point, or a station) from a side shot - see
+        // computeAnchorSegments / computeSideShotSegments.
+        if (type !== "level" && type !== "traverse") return row;
+        return row + `<div class="lg-item"><span class="lg-line" style="border-color:${s.color};opacity:0.45;"></span>${s.label} (side shot)</div>`;
+      })
       .join("");
   }
 
@@ -83,7 +88,8 @@ const MapView = (() => {
     legendControl = L.control({ position: "bottomright" });
     legendControl.onAdd = () => {
       const div = L.DomUtil.create("div", "map-legend");
-      div.innerHTML = `<h4>Legend</h4>${featureLegendRows()}<hr style="margin:5px 0;border-color:#eee"/>${connectionLegendRows()}`;
+      const tripodRow = `<div class="lg-item"><span class="lg-swatch" style="background:#2c333b;border-radius:3px;"></span>Tripod Setup</div>`;
+      div.innerHTML = `<h4>Legend</h4>${featureLegendRows()}${tripodRow}<hr style="margin:5px 0;border-color:#eee"/>${connectionLegendRows()}`;
       return div;
     };
     legendControl.addTo(map);
@@ -187,29 +193,106 @@ const MapView = (() => {
     `;
   }
 
+  function tripodIcon(isSelected) {
+    const ring = isSelected ? "0 0 0 3px #ffcf40" : "none";
+    return L.divIcon({
+      className: "",
+      html: `<div class="tripod-icon" style="box-shadow:${ring};">&#9698;</div>`,
+      iconSize: [24, 24],
+      iconAnchor: [12, 20],
+      popupAnchor: [0, -18],
+    });
+  }
+
+  function tripodPopupHtml(tripod) {
+    return `
+      <div class="pop-title">${tripod.id} &mdash; Tripod Setup</div>
+      <div class="pop-row"><strong>N/E:</strong> ${tripod.northing.toFixed(2)}, ${tripod.easting.toFixed(2)}</div>
+      <button data-delete-tripod-id="${tripod.id}">Delete Tripod</button>
+    `;
+  }
+
+  // A sighting line, whichever module computed it (Leveling's per-point FS/BS
+  // or Traverse's per-side-shot reading): an invisible, wider line underneath
+  // for a generous, reliable click target (a thin dashed line has gaps a
+  // click can land on and miss), plus the actual visible line drawn lighter
+  // for a spur (a plain leveling point, or any traverse side shot) than for
+  // the chain the survey actually advances along. Traverse segments also
+  // carry hasTripod - true once a real instrument setup has been placed for
+  // that line, false while it's still falling back to the point itself -
+  // undefined (Leveling) always dashes, matching the old blanket behavior.
+  function drawSightingSegments(segments, style, tooltips) {
+    segments.forEach((seg) => {
+      const latlngs = [[seg.from.lat, seg.from.lng], [seg.to.lat, seg.to.lng]];
+      // bubblingMouseEvents defaults to true for L.Path (unlike markers,
+      // where it's false) - without this, clicking this line while in Add
+      // Point/Add Tripod mode would ALSO bubble up to the map's own click
+      // handler and place a new point/tripod right on top of whatever this
+      // line's click just opened.
+      L.polyline(latlngs, { opacity: 0, weight: 16, bubblingMouseEvents: false })
+        .bindTooltip(seg.isSpur ? tooltips.spur : tooltips.chain, { sticky: true })
+        .on("click", () => emit("sightingclick", seg.pointId))
+        .addTo(lineLayer);
+      L.polyline(latlngs, {
+        color: style.color,
+        weight: seg.isSpur ? 2 : 3,
+        opacity: seg.isSpur ? 0.45 : 1,
+        dashArray: seg.hasTripod === false ? null : style.dashArray,
+        interactive: false,
+      }).addTo(lineLayer);
+    });
+  }
+
   function render(project) {
     markerLayer.clearLayers();
     lineLayer.clearLayers();
 
     project.connections.forEach((conn) => {
       const style = State.CONNECTION_STYLES[conn.type] || State.CONNECTION_STYLES.path;
+
+      if (conn.type === "level") {
+        drawSightingSegments(Leveling.computeAnchorSegments(conn), style, {
+          chain: "Click to record this sighting's reading",
+          spur: "Side shot - click to record its Foresight reading",
+        });
+        return;
+      }
+
+      if (conn.type === "traverse") {
+        // Standard procedure sets the instrument up directly over each
+        // station, so its Backsight/Foresight lines route through that
+        // station's own tripod (once placed) instead of one shared
+        // point-to-point chain - see computeStationSightingSegments.
+        drawSightingSegments(Traverse.computeStationSightingSegments(conn), style, {
+          chain: "Click to record this point's Backsight/Foresight reading",
+          spur: "",
+        });
+        // A side shot is a detail reading off a station, never a station
+        // itself - the chain above never runs through it, so it gets its
+        // own, lighter sighting line.
+        drawSightingSegments(Traverse.computeSideShotSegments(), style, {
+          chain: "Click to record this reading",
+          spur: "Side shot - click to record its angle/distance reading",
+        });
+        return;
+      }
+
       const latlngs = conn.pointIds
         .map((id) => State.getPoint(id))
         .filter(Boolean)
         .map((p) => [p.lat, p.lng]);
-      // Boundaries always close into a loop; auto-managed traverse/leveling
-      // runs close too when their Survey Type is "closed" (they no longer
-      // repeat the first station's ID in pointIds to represent that).
-      const shouldClose = conn.type === "boundary" || ((conn.type === "traverse" || conn.type === "level") && conn.surveyType === "closed");
+      // Boundaries always close into a loop.
+      const shouldClose = conn.type === "boundary";
       if (shouldClose && latlngs.length > 2) latlngs.push(latlngs[0]);
-      if (latlngs.length < 2) return;
-      L.polyline(latlngs, {
-        color: style.color,
-        weight: 3,
-        dashArray: style.dashArray,
-      })
-        .bindTooltip(conn.name, { sticky: true })
-        .addTo(lineLayer);
+      if (latlngs.length >= 2) {
+        L.polyline(latlngs, {
+          color: style.color,
+          weight: conn.type === "boundary" ? 3 : 2.5,
+          dashArray: style.dashArray,
+        })
+          .bindTooltip(conn.name, { sticky: true })
+          .addTo(lineLayer);
+      }
     });
 
     project.points.forEach((point) => {
@@ -232,6 +315,22 @@ const MapView = (() => {
       marker.on("click", () => emit("markerclick", point.id));
       marker.addTo(markerLayer);
     });
+
+    (project.tripods || []).forEach((tripod) => {
+      const marker = L.marker([tripod.lat, tripod.lng], {
+        icon: tripodIcon(selectedIds.includes(tripod.id)),
+      });
+      marker.bindTooltip(tripod.id, { permanent: false, direction: "top" });
+      if (!suppressPopups) {
+        marker.bindPopup(tripodPopupHtml(tripod));
+        marker.on("popupopen", (e) => {
+          const btn = e.popup.getElement().querySelector("[data-delete-tripod-id]");
+          if (btn) btn.addEventListener("click", () => emit("deletetripodrequest", tripod.id));
+        });
+      }
+      marker.on("click", () => emit("tripodclick", tripod.id));
+      marker.addTo(markerLayer);
+    });
   }
 
   function setSelectedIds(ids) {
@@ -249,8 +348,14 @@ const MapView = (() => {
   }
 
   function fitToPoints(project) {
-    if (!project.points.length) return;
-    const bounds = L.latLngBounds(project.points.map((p) => [p.lat, p.lng]));
+    // Tripods included too - a setup placed off to the side of the points it
+    // sights (a common, realistic layout) would otherwise fall outside the
+    // fitted view entirely.
+    const coords = project.points
+      .map((p) => [p.lat, p.lng])
+      .concat((project.tripods || []).map((t) => [t.lat, t.lng]));
+    if (!coords.length) return;
+    const bounds = L.latLngBounds(coords);
     map.fitBounds(bounds.pad(0.2));
   }
 

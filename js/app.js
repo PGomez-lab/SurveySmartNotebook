@@ -5,7 +5,7 @@
  */
 
 (() => {
-  let mode = "idle"; // 'idle' | 'add' | 'connect'
+  let mode = "idle"; // 'idle' | 'add' | 'tripod' | 'connect'
   let connectSelection = [];
   let editingPointId = null;
   let pendingPhotoDataUrl = null;
@@ -73,13 +73,8 @@
     });
   }
 
-  function isLevelingCategory(category) {
-    return category === "levelingPoints" || category === "levelingLoop";
-  }
-
-  function isTraverseCategory(category) {
-    return category === "traverseOpen" || category === "traverseClosed";
-  }
+  const isLevelingCategory = State.isLevelingCategory;
+  const isTraverseCategory = State.isTraverseCategory;
 
   // A leveling run's very first station is the starting benchmark: it has no
   // incoming shot (nothing precedes it), only the outgoing Backsight that
@@ -103,8 +98,8 @@
   // match (existing out-of-scope data is never hidden or lost, only the
   // *choices offered* are narrowed).
   function surveyScope(surveyType) {
-    if (surveyType === "levelingPoints" || surveyType === "levelingLoop") return "leveling";
-    if (surveyType === "traverseOpen" || surveyType === "traverseClosed") return "traverse";
+    if (isLevelingCategory(surveyType)) return "leveling";
+    if (isTraverseCategory(surveyType)) return "traverse";
     return "all";
   }
 
@@ -133,7 +128,7 @@
       .filter(([value]) => {
         if (value === "none" || value === currentValue || scope === "all") return true;
         if (scope === "leveling") return isLevelingCategory(value);
-        if (scope === "traverse") return value === "traverseOpen" || value === "traverseClosed";
+        if (scope === "traverse") return isTraverseCategory(value);
         return true;
       })
       .map(([value, label]) => `<option value="${value}">${label}</option>`)
@@ -145,6 +140,7 @@
   function setMode(next) {
     mode = mode === next ? "idle" : next;
     el("btnAddPoint").classList.toggle("tool-active", mode === "add");
+    el("btnAddTripod").classList.toggle("tool-active", mode === "tripod");
     el("btnConnect").classList.toggle("tool-active", mode === "connect");
     el("btnFinishConnect").disabled = !(mode === "connect" && connectSelection.length >= 2);
     el("btnUndoConnect").disabled = !(mode === "connect" && connectSelection.length >= 1);
@@ -152,6 +148,9 @@
     const banner = el("modeBanner");
     if (mode === "add") {
       banner.textContent = "Click the map to add a survey point.";
+      banner.classList.remove("hidden");
+    } else if (mode === "tripod") {
+      banner.textContent = "Click the map where the tripod/instrument is actually set up.";
       banner.classList.remove("hidden");
     } else if (mode === "connect") {
       banner.textContent = "Click points in order to connect them (click a point again to deselect it), then press Finish Line.";
@@ -208,6 +207,95 @@
     el("pf_levelIsTurningPoint").closest("label").classList.toggle("hidden", modalIsBenchmark);
   }
 
+  // Shows/hides the traverse-only Side Shot block: a normal station keeps
+  // the existing Field Angle/Bearing/Azimuth fields, while a side shot (flag
+  // it via the checkbox) swaps to a single angle+distance reading from
+  // whichever station or tripod it was actually sighted from - the traverse
+  // chain never continues through it, same idea as a leveling run's plain
+  // (non-turning) point.
+  function refreshTraverseFieldVisibility() {
+    const cat = el("pf_surveyCategory").value;
+    if (!isTraverseCategory(cat)) {
+      el("pf_traverseStationFields").classList.add("hidden");
+      el("pf_sideShotBlock").classList.add("hidden");
+      el("pf_adjustedNote").classList.add("hidden");
+      return;
+    }
+    const isSideShot = el("pf_isSideShot").checked;
+    el("pf_traverseStationFields").classList.toggle("hidden", isSideShot);
+    el("pf_sideShotBlock").classList.toggle("hidden", !isSideShot);
+    // Corrected/Adjusted values depend on the whole traverse's angular
+    // closure - meaningless for a side shot, which was never part of it.
+    el("pf_adjustedNote").classList.toggle("hidden", isSideShot);
+  }
+
+  // Fills a "Sighted From" <select> with every existing traverse station
+  // (excluding the point being edited, if any) - a side shot's instrument is
+  // just the current station itself, sighting out to a detail point.
+  function populateSightedFromSelect(selectEl, selectedId, excludePointId) {
+    const project = State.getProject();
+    const stations = project.points.filter((p) => isTraverseCategory(p.surveyCategory) && !p.isSideShot && p.id !== excludePointId);
+    const lastStation = stations.length ? stations[stations.length - 1].id : "";
+    const fallback = selectedId != null ? selectedId : lastStation;
+    selectEl.innerHTML =
+      `<option value="">no point placed yet</option>` +
+      (stations.length ? `<optgroup label="Points">${stations.map((s) => `<option value="${s.id}">${s.id}</option>`).join("")}</optgroup>` : "");
+    selectEl.value = fallback || "";
+  }
+
+  function populateTraverseSideShotFields(p) {
+    const num = (v) => (v === null || v === undefined ? "" : v);
+    el("pf_isSideShot").checked = !!p.isSideShot;
+    el("pf_sideShotAngle").value = p.sideShotAngle || "";
+    el("pf_sideShotBearing").value = p.sideShotBearing || "";
+    el("pf_sideShotAzimuth").value = p.sideShotAzimuth || "";
+    el("pf_sideShotDistTaped").value = num(p.sideShotDistTaped);
+    el("pf_sideShotStadiaTop").value = num(p.sideShotStadiaTop);
+    el("pf_sideShotStadiaBottom").value = num(p.sideShotStadiaBottom);
+    populateSightedFromSelect(el("pf_sideShotFrom"), p.sightedFromId, p.id);
+  }
+
+  // A traverse station is just point-to-point: set up here, sight the
+  // previous point, zero it, sight the next point, and record the interior
+  // angle turned - no tripod, no separate Backsight/Foresight setup. This
+  // point's own line to the NEXT point is what gets recorded (Bearing/
+  // Azimuth/Distance); the previous point's own row already recorded ITS
+  // line to this one.
+  function populateTraverseStationFields(p) {
+    const num = (v) => (v === null || v === undefined ? "" : v);
+    el("pf_fieldBearing").value = p.fieldBearing || "";
+    el("pf_fieldAzimuth").value = p.fieldAzimuth || "";
+    el("pf_travDistTaped").value = num(p.fsDistTaped);
+    el("pf_fieldAngle").value = p.fieldAngle || "";
+  }
+
+  // Fills a Tripod Setup <select> with every placed tripod plus a "none"
+  // option, selecting whichever tripod the given point already recorded
+  // (existing point), or the most-recently-placed one as a convenience
+  // default (brand-new point) - a starting guess the student can change,
+  // never something the app locks in on its own. avoidId (Backsight only)
+  // skips defaulting to a tripod that's already claimed by this same
+  // point's Foresight - a turning point's two shots are physically two
+  // different setups, so silently defaulting both to whatever's currently
+  // the only tripod would save an impossible "same setup did both" reading.
+  function populateTripodSelect(selectEl, selectedId, avoidId) {
+    const tripods = State.getProject().tripods;
+    // null/undefined both mean "nothing recorded yet" (a brand-new point, or
+    // an existing turning point whose new setup wasn't placed at the time it
+    // was added) - default to the most-recently-placed tripod either way, so
+    // coming back to assign a Backsight once the new tripod finally exists is
+    // just "open, confirm, save" instead of hunting through the dropdown.
+    let fallback = selectedId;
+    if (fallback == null) {
+      const active = State.activeTripodId();
+      fallback = active && active !== avoidId ? active : "";
+    }
+    selectEl.innerHTML =
+      `<option value="">no tripod placed yet</option>` +
+      tripods.map((t) => `<option value="${t.id}">${t.id}</option>`).join("");
+    selectEl.value = fallback || "";
+  }
+
   function populateLevelingFields(p) {
     const num = (v) => (v === null || v === undefined ? "" : v);
     el("pf_levelFs").value = num(p.fs);
@@ -219,6 +307,9 @@
     el("pf_levelBsStadiaBottom").value = num(p.bsStadiaBottom);
     el("pf_levelBsDistTaped").value = num(p.bsDistTaped);
     el("pf_levelIsTurningPoint").checked = !!p.isTurningPoint;
+    populateTripodSelect(el("pf_levelFsTripod"), p.fsTripodId);
+    const fsEffective = p.fsTripodId != null ? p.fsTripodId : State.activeTripodId();
+    populateTripodSelect(el("pf_levelBsTripod"), p.bsTripodId, modalIsBenchmark ? null : fsEffective);
   }
 
   function openPointModal(id) {
@@ -243,10 +334,12 @@
     el("pf_fieldAngle").value = p.fieldAngle || "";
     el("pf_fieldBearing").value = p.fieldBearing || "";
     el("pf_fieldAzimuth").value = p.fieldAzimuth || "";
+    populateTraverseStationFields(p);
+    populateTraverseSideShotFields(p);
     el("pf_instrumentFieldsRow").classList.toggle("hidden", !isLevelingCategory(p.surveyCategory) && !isTraverseCategory(p.surveyCategory));
     refreshLevelingFieldVisibility(p.surveyCategory);
     el("pf_traverseReadingsRow").classList.toggle("hidden", !isTraverseCategory(p.surveyCategory));
-    el("pf_adjustedNote").classList.toggle("hidden", !isTraverseCategory(p.surveyCategory));
+    refreshTraverseFieldVisibility();
     // Differential leveling doesn't use Northing/Easting - hide that row too.
     el("pf_coordRow").classList.toggle("hidden", isLevelingCategory(p.surveyCategory));
     el("pf_description").value = p.description || "";
@@ -293,10 +386,12 @@
     el("pf_fieldAngle").value = "";
     el("pf_fieldBearing").value = "";
     el("pf_fieldAzimuth").value = "";
+    populateTraverseStationFields({});
+    populateTraverseSideShotFields({});
     el("pf_instrumentFieldsRow").classList.toggle("hidden", !isLevelingCategory(defaultCategory) && !isTraverseCategory(defaultCategory));
     refreshLevelingFieldVisibility(defaultCategory);
     el("pf_traverseReadingsRow").classList.toggle("hidden", !isTraverseCategory(defaultCategory));
-    el("pf_adjustedNote").classList.toggle("hidden", !isTraverseCategory(defaultCategory));
+    refreshTraverseFieldVisibility();
     el("pf_coordRow").classList.toggle("hidden", isLevelingCategory(defaultCategory));
     el("pf_description").value = "";
     el("pf_notes").value = "";
@@ -328,6 +423,9 @@
     const elevRaw = el("pf_elevation").value;
     const cat = el("pf_surveyCategory").value;
     const leveling = isLevelingCategory(cat);
+    const traverse = isTraverseCategory(cat);
+    const isSideShot = traverse && el("pf_isSideShot").checked;
+    const isTravStation = traverse && !isSideShot;
     // Only Leveling has point-level instrument-reading quick-entry (split
     // into Foresight/Backsight shot blocks) - Traverse's BS/FS/HI/Corr./Adj.
     // are all entered later, in the Traverse Table, once the whole station
@@ -342,6 +440,9 @@
       // A survey role, not a feature - kept separate so checking this never
       // overwrites whatever the student picked for Feature Type.
       isTurningPoint: leveling ? el("pf_levelIsTurningPoint").checked : false,
+      // A survey role, not a feature, same reasoning as isTurningPoint above -
+      // a side shot never becomes part of the traverse chain itself.
+      isSideShot,
       surveyCategory: cat,
       // Traverse has no point-level HI/BS/FS/Distance quick-entry anymore -
       // those, like Correction/Adjusted, are only ever entered in the
@@ -352,15 +453,50 @@
       bs: leveling ? numOrNull(el("pf_levelBs").value) : null,
       fs: leveling ? numOrNull(el("pf_levelFs").value) : null,
       dist: null,
-      fieldAngle: el("pf_fieldAngle").value.trim() || null,
-      fieldBearing: el("pf_fieldBearing").value.trim() || null,
-      fieldAzimuth: el("pf_fieldAzimuth").value.trim() || null,
+      // A side shot has no outgoing leg of its own (the chain doesn't
+      // continue through it), so the station-only Field Angle/Backsight/
+      // Foresight fields are irrelevant to it - same treatment as bs/fs
+      // outside Leveling above.
+      fieldAngle: isTravStation ? (el("pf_fieldAngle").value.trim() || null) : null,
+      fieldBearing: isTravStation ? (el("pf_fieldBearing").value.trim() || null) : null,
+      fieldAzimuth: isTravStation ? (el("pf_fieldAzimuth").value.trim() || null) : null,
+      fsAngleReading: isTravStation ? (el("pf_travFsAngleReading").value.trim() || null) : null,
+      // The Backsight line's bearing/azimuth/angle reading - a traverse-only
+      // counterpart to the Foresight line's own fields above, since each is
+      // an independent sighting (its own tripod, its own raw reading).
+      bsFieldBearing: isTravStation ? (el("pf_travBsBearing").value.trim() || null) : null,
+      bsFieldAzimuth: isTravStation ? (el("pf_travBsAzimuth").value.trim() || null) : null,
+      bsAngleReading: isTravStation ? (el("pf_travBsAngleReading").value.trim() || null) : null,
+      // Not always "the previous/next station" once a side shot (or a
+      // resection) is also visible from this same setup - explicit rather
+      // than assumed, and independent per line like everything else here.
+      bsAngleFromId: isTravStation ? (el("pf_travBsAngleFrom").value || null) : null,
+      fsAngleFromId: isTravStation ? (el("pf_travFsAngleFrom").value || null) : null,
       bsStadiaTop: leveling ? numOrNull(el("pf_levelBsStadiaTop").value) : null,
       bsStadiaBottom: leveling ? numOrNull(el("pf_levelBsStadiaBottom").value) : null,
-      bsDistTaped: leveling ? numOrNull(el("pf_levelBsDistTaped").value) : null,
+      bsDistTaped: leveling ? numOrNull(el("pf_levelBsDistTaped").value) : isTravStation ? numOrNull(el("pf_travBsDistTaped").value) : null,
       fsStadiaTop: leveling ? numOrNull(el("pf_levelFsStadiaTop").value) : null,
       fsStadiaBottom: leveling ? numOrNull(el("pf_levelFsStadiaBottom").value) : null,
-      fsDistTaped: leveling ? numOrNull(el("pf_levelFsDistTaped").value) : null,
+      fsDistTaped: leveling ? numOrNull(el("pf_levelFsDistTaped").value) : isTravStation ? numOrNull(el("pf_travFsDistTaped").value) : null,
+      // Which tripod setup each line's reading actually came from - lets the
+      // map draw the real sighting line instead of a straight point-to-point
+      // guess. A traverse station's Backsight and Foresight are two
+      // independent sightings, each with its own dropdown, so they CAN
+      // differ (e.g. a free-station resection) rather than being forced to
+      // the same setup.
+      fsTripodId: leveling ? (el("pf_levelFsTripod").value || null) : isTravStation ? (el("pf_travFsTripod").value || null) : null,
+      bsTripodId: leveling ? (el("pf_levelBsTripod").value || null) : isTravStation ? (el("pf_travBsTripod").value || null) : null,
+      // A side shot's own single reading - a Station ID or Tripod ID (a
+      // free-station setup) plus angle/distance, independent of the whole
+      // traverse's closure, so (unlike Correction/Adjusted) it's collected
+      // right here rather than in the Traverse Table.
+      sightedFromId: isSideShot ? (el("pf_sideShotFrom").value || null) : null,
+      sideShotAngle: isSideShot ? (el("pf_sideShotAngle").value.trim() || null) : null,
+      sideShotBearing: isSideShot ? (el("pf_sideShotBearing").value.trim() || null) : null,
+      sideShotAzimuth: isSideShot ? (el("pf_sideShotAzimuth").value.trim() || null) : null,
+      sideShotDistTaped: isSideShot ? numOrNull(el("pf_sideShotDistTaped").value) : null,
+      sideShotStadiaTop: isSideShot ? numOrNull(el("pf_sideShotStadiaTop").value) : null,
+      sideShotStadiaBottom: isSideShot ? numOrNull(el("pf_sideShotStadiaBottom").value) : null,
       description: el("pf_description").value.trim(),
       notes: el("pf_notes").value.trim(),
     };
@@ -461,6 +597,7 @@
       if (State.undo()) showToast("Undid last change.");
     });
     el("btnAddPoint").addEventListener("click", () => setMode("add"));
+    el("btnAddTripod").addEventListener("click", () => setMode("tripod"));
     el("btnConnect").addEventListener("click", () => setMode("connect"));
     el("btnFinishConnect").addEventListener("click", openConnectionModal);
     el("btnUndoConnect").addEventListener("click", undoLastConnectPoint);
@@ -571,10 +708,16 @@
       el("pf_instrumentFieldsRow").classList.toggle("hidden", !isLevelingCategory(cat) && !isTraverseCategory(cat));
       refreshLevelingFieldVisibility(cat);
       el("pf_traverseReadingsRow").classList.toggle("hidden", !isTraverseCategory(cat));
-      el("pf_adjustedNote").classList.toggle("hidden", !isTraverseCategory(cat));
+      refreshTraverseFieldVisibility();
       el("pf_coordRow").classList.toggle("hidden", isLevelingCategory(cat));
     });
     el("pf_levelIsTurningPoint").addEventListener("change", () => refreshLevelingFieldVisibility(el("pf_surveyCategory").value));
+    el("pf_isSideShot").addEventListener("change", () => {
+      refreshTraverseFieldVisibility();
+      // The default "Sighted From" guess (last station) can change once the
+      // checkbox reveals the field for the first time on a brand-new point.
+      populateSightedFromSelect(el("pf_sideShotFrom"), el("pf_sideShotFrom").value || null, editingPointId);
+    });
 
     el("conn_cancelBtn").addEventListener("click", closeConnectionModal);
     el("conn_saveBtn").addEventListener("click", saveConnection);
@@ -638,6 +781,10 @@
     MapView.on("mapclick", (latlng) => {
       if (mode === "add") {
         openPointModalForNew(latlng.lat, latlng.lng);
+      } else if (mode === "tripod") {
+        const tripod = State.addTripod(latlng.lat, latlng.lng);
+        showToast(`Placed tripod ${tripod.id} — the active setup for any new sighting.`);
+        MapView.render(State.getProject());
       }
     });
     MapView.on("markerclick", (id) => {
@@ -646,8 +793,19 @@
       // an existing marker while in Add Point mode would otherwise silently
       // do nothing (no new point, no feedback) - tell the student what happened.
       else if (mode === "add") showToast(`That's existing point ${id} — click elsewhere on the map to add a new one.`);
+      else if (mode === "tripod") showToast(`That's existing point ${id}, not a tripod — click elsewhere to place a new one.`);
+    });
+    MapView.on("tripodclick", (id) => {
+      if (mode === "add") showToast(`That's tripod ${id}, not a point — click elsewhere on the map to add a new one.`);
+      else if (mode === "tripod") showToast(`That's existing tripod ${id} — click elsewhere on the map to place a new one.`);
+    });
+    MapView.on("deletetripodrequest", (id) => {
+      State.deleteTripod(id);
+      MapView.render(State.getProject());
+      showToast(`Deleted tripod ${id}.`);
     });
     MapView.on("editrequest", (id) => openPointModal(id));
+    MapView.on("sightingclick", (pointId) => openPointModal(pointId));
     Table.on("editRequest", (id) => openPointModal(id));
   }
 

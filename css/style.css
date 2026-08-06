@@ -374,6 +374,15 @@ textarea { resize: vertical; }
   border: 2px solid #fff; border-radius: 50%;
   box-shadow: 0 1px 4px rgba(0,0,0,0.4);
 }
+.tripod-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px;
+  color: #fff; font-size: 15px;
+  background: #2c333b;
+  border: 2px solid #fff;
+  border-radius: 4px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+}
 .point-label {
   background: rgba(255,255,255,0.92);
   padding: 1px 5px;

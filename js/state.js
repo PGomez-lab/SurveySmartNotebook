@@ -20,7 +20,7 @@ const State = (() => {
 
   const CONNECTION_STYLES = {
     path: { color: "#1f5f8b", dashArray: "6,6", label: "Survey Path" },
-    traverse: { color: "#c1272d", dashArray: null, label: "Traverse" },
+    traverse: { color: "#c1272d", dashArray: "8,4", label: "Traverse" },
     boundary: { color: "#2c6e49", dashArray: null, label: "Boundary" },
     level: { color: "#8a3fa0", dashArray: "2,5", label: "Differential Leveling Run" },
   };
@@ -36,6 +36,16 @@ const State = (() => {
   };
   const LEVELING_CATEGORIES = ["levelingPoints", "levelingLoop"];
   const TRAVERSE_CATEGORIES = ["traverseOpen", "traverseClosed"];
+  // The single source of truth for "is this category leveling/traverse" -
+  // app.js, traverse.js, and pdfexport.js each used to reimplement this
+  // check inline against hardcoded string literals, which drifts silently
+  // if a category is ever renamed or a third type is added.
+  function isLevelingCategory(category) {
+    return LEVELING_CATEGORIES.includes(category);
+  }
+  function isTraverseCategory(category) {
+    return TRAVERSE_CATEGORIES.includes(category);
+  }
   // Fixed IDs for the one auto-managed run per type - no manual "Connect
   // Points" step needed for Traverse/Leveling: just add points with the
   // matching Survey Type and these stay in sync automatically, in the order
@@ -61,6 +71,7 @@ const State = (() => {
         originLng: -73.972,
       },
       points: [],
+      tripods: [],
       connections: [],
     };
   }
@@ -176,9 +187,15 @@ const State = (() => {
   // points currently carry a matching Survey Type, in the order they appear
   // in project.points (i.e. the order they were added). Field data is keyed
   // by point ID (not position), so re-ordering/adding/removing points never
-  // misaligns anyone else's readings.
+  // misaligns anyone else's readings. A side shot is excluded from the
+  // station chain itself - it's a detail reading off whichever station is
+  // active, not a station the traverse actually runs through (a leveling
+  // run's plain points stay in its chain since turning-point-or-not doesn't
+  // change adjacency, but a traverse leg is computed between ADJACENT chain
+  // entries, so splicing a side shot in there would corrupt its neighbors'
+  // distance/angle math).
   function syncOneAutoRun(connId, type, categories, surveyType) {
-    const matching = project.points.filter((p) => categories.includes(p.surveyCategory)).map((p) => p.id);
+    const matching = project.points.filter((p) => categories.includes(p.surveyCategory) && !p.isSideShot).map((p) => p.id);
     const existingIdx = project.connections.findIndex((c) => c.id === connId);
     if (matching.length < 2) {
       if (existingIdx >= 0) project.connections.splice(existingIdx, 1);
@@ -246,25 +263,63 @@ const State = (() => {
         bs: null,
         fs: null,
         dist: null,
+        // The interior angle turned AT this point, between the line back to
+        // the previous point and the line ahead to the next - worked out by
+        // hand from the instrument's horizontal-circle readings, the same
+        // way Adjusted values are never computed by the app. No tripod, no
+        // separate Backsight/Foresight setup - a traverse station is just
+        // "set up here, sight back, zero, sight ahead, record the angle."
         fieldAngle: null,
+        // This point's own line to the NEXT point - fsDistTaped below
+        // (shared with leveling's Foresight distance field) doubles as this
+        // line's distance.
         fieldBearing: null,
         fieldAzimuth: null,
-        // Differential leveling only: with a single rod and instrument, a
-        // turning point is sighted from two different setups - the incoming
+        // Differential leveling: with a single rod and instrument, a turning
+        // point is sighted from two different setups - the incoming
         // foresight and the outgoing backsight each need their own distance
         // (stadia hairs + a taped measurement), not the one shared `dist`
         // above. bs/fs/hi are reused for the actual rod readings.
+        // Traverse reuses fsDistTaped for its own single line's distance to
+        // the next point too (stadia isn't a traverse thing - EDM or tape
+        // only; bsStadiaTop/Bottom/bsDistTaped are leveling-only).
         bsStadiaTop: null,
         bsStadiaBottom: null,
         bsDistTaped: null,
         fsStadiaTop: null,
         fsStadiaBottom: null,
         fsDistTaped: null,
+        // Differential leveling only: which physical tripod setup each
+        // reading was actually sighted from. A turning point's incoming
+        // Foresight and outgoing Backsight can (and usually do) come from
+        // two different tripod locations, since the instrument, not the
+        // rod, is what moves. Null until a tripod has actually been placed
+        // for it, in which case the map falls back to drawing the sighting
+        // line straight to the previous/next point instead. Traverse has no
+        // tripod concept at all - it sights straight point to point.
+        fsTripodId: null,
+        bsTripodId: null,
         // Whether this point is a leveling turning point (a new instrument
         // setup starts here) - a survey ROLE, kept separate from Feature
         // Type (what the point physically is: a nail in a sidewalk, a rock
         // outcropping, etc.) so checking one never overwrites the other.
         isTurningPoint: false,
+        // Traverse only: a side shot is a detail point read (angle + distance)
+        // from whichever station is currently active - a survey ROLE, kept
+        // separate from Feature Type for the same reason as isTurningPoint
+        // above. Unlike a real station, a side shot never becomes part of
+        // the traverse chain itself (see syncOneAutoRun) - the path doesn't
+        // continue through it, matching a leveling run's plain (non-turning)
+        // point.
+        isSideShot: false,
+        // The station this side shot was sighted from.
+        sightedFromId: null,
+        sideShotAngle: null,
+        sideShotBearing: null,
+        sideShotAzimuth: null,
+        sideShotDistTaped: null,
+        sideShotStadiaTop: null,
+        sideShotStadiaBottom: null,
         description: "",
         notes: "",
         photo: null,
@@ -297,6 +352,15 @@ const State = (() => {
           delete c.fieldData[oldId];
         }
       });
+      // Other points can reference this one by ID directly (angleFromId
+      // fields, a side shot's sightedFromId) - same reasoning as remapping
+      // pointIds/fieldData above, just for cross-point references instead of
+      // connection membership.
+      project.points.forEach((other) => {
+        if (other.bsAngleFromId === oldId) other.bsAngleFromId = patch.id;
+        if (other.fsAngleFromId === oldId) other.fsAngleFromId = patch.id;
+        if (other.sightedFromId === oldId) other.sightedFromId = patch.id;
+      });
     }
     syncAutoRuns();
     persist();
@@ -311,12 +375,68 @@ const State = (() => {
       if (c.fieldData) delete c.fieldData[id];
     });
     project.connections = project.connections.filter((c) => c.auto || c.pointIds.length >= 2);
+    // Other points can reference this one by ID directly (angleFromId
+    // fields, a side shot's sightedFromId) - same cleanup deleteTripod
+    // already does for fsTripodId/bsTripodId, just for point references
+    // instead of tripod ones. Left dangling, these would keep pointing a
+    // sighting line/table row at an ID that no longer exists.
+    project.points.forEach((p) => {
+      if (p.bsAngleFromId === id) p.bsAngleFromId = null;
+      if (p.fsAngleFromId === id) p.fsAngleFromId = null;
+      if (p.sightedFromId === id) p.sightedFromId = null;
+    });
     syncAutoRuns();
     persist();
   }
 
   function getPoint(id) {
     return project.points.find((p) => p.id === id) || null;
+  }
+
+  function nextTripodId() {
+    let n = project.tripods.length + 1;
+    let id;
+    const used = new Set(project.tripods.map((t) => t.id));
+    do {
+      id = "T" + String(n).padStart(3, "0");
+      n++;
+    } while (used.has(id));
+    return id;
+  }
+
+  // A tripod/instrument setup location - just a place on the map, never a
+  // survey point (no elevation, no readings of its own). The most recently
+  // added one is the "active" setup: whichever tripod a student places most
+  // recently is the one new rod readings get attributed to, until a fresh
+  // tripod is placed for the next setup.
+  function addTripod(lat, lng) {
+    snapshotForUndo();
+    const ne = Coords.forward(lat, lng);
+    const tripod = { id: nextTripodId(), lat, lng, northing: ne.northing, easting: ne.easting };
+    project.tripods.push(tripod);
+    persist();
+    return tripod;
+  }
+
+  function deleteTripod(id) {
+    snapshotForUndo();
+    project.tripods = project.tripods.filter((t) => t.id !== id);
+    // Points that had recorded a reading against this tripod keep the
+    // reading itself but lose the map-line association - falls back to a
+    // direct point-to-point line, same as before any tripod existed.
+    project.points.forEach((p) => {
+      if (p.fsTripodId === id) p.fsTripodId = null;
+      if (p.bsTripodId === id) p.bsTripodId = null;
+    });
+    persist();
+  }
+
+  function getTripod(id) {
+    return project.tripods.find((t) => t.id === id) || null;
+  }
+
+  function activeTripodId() {
+    return project.tripods.length ? project.tripods[project.tripods.length - 1].id : null;
   }
 
   // Manual connections - only "path" and "boundary" are user-drawn now;
@@ -403,6 +523,8 @@ const State = (() => {
     FEATURE_STYLES,
     CONNECTION_STYLES,
     SURVEY_CATEGORIES,
+    isLevelingCategory,
+    isTraverseCategory,
     init,
     on,
     getProject,
@@ -411,6 +533,10 @@ const State = (() => {
     updatePoint,
     deletePoint,
     getPoint,
+    addTripod,
+    deleteTripod,
+    getTripod,
+    activeTripodId,
     addConnection,
     updateConnectionMeta,
     updateFieldData,

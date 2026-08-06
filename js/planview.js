@@ -169,7 +169,7 @@ const PlanView = (() => {
     ctx.fillText(text, x, y);
   }
 
-  async function render(canvas, project) {
+  async function render(canvas, project, opts = {}) {
     const ctx = canvas.getContext("2d");
     const W = canvas.width, H = canvas.height;
     ctx.clearRect(0, 0, W, H);
@@ -193,11 +193,15 @@ const PlanView = (() => {
     ctx.strokeRect(padLeft, padTop, drawWidth, drawHeight);
 
     const points = project.points;
+    const tripods = project.tripods || [];
     // Fall back to the project's origin (e.g. Fort Greene Park) so the map
     // still shows real geography even before any point has been added.
-    const hasPoints = points.length > 0;
-    const latVals = hasPoints ? points.map((p) => p.lat) : [project.meta.originLat];
-    const lonVals = hasPoints ? points.map((p) => p.lng) : [project.meta.originLng];
+    // Tripods count toward the extent too - one placed off to the side of
+    // the points it sights (a common, realistic layout) would otherwise be
+    // cropped out of the map entirely.
+    const hasPoints = points.length > 0 || tripods.length > 0;
+    const latVals = hasPoints ? points.map((p) => p.lat).concat(tripods.map((t) => t.lat)) : [project.meta.originLat];
+    const lonVals = hasPoints ? points.map((p) => p.lng).concat(tripods.map((t) => t.lng)) : [project.meta.originLng];
     let latMin = Math.min(...latVals), latMax = Math.max(...latVals);
     let lonMin = Math.min(...lonVals), lonMax = Math.max(...lonVals);
     // Pad in degrees; ~0.0015 deg is roughly 500ft, a sensible minimum extent
@@ -283,20 +287,67 @@ const PlanView = (() => {
       haloText(ctx, `E ${Math.round(e).toLocaleString()}`, canvasX(p2.lng) + 4, canvasY(p2.lat) - 3);
     }
 
+    // A sighting line, whichever module computed it (Leveling's per-point
+    // FS/BS or Traverse's per-side-shot reading) - drawn lighter for a spur
+    // (a plain leveling point, or any traverse side shot) than for the chain
+    // the survey actually advances along, matching the interactive map.
+    // Traverse segments also carry hasTripod - true once a real instrument
+    // setup has been placed for that line, false while it's still falling
+    // back to the point itself - so it draws solid until then. undefined
+    // (Leveling) always uses the connection's own dash pattern.
+    function drawSightingSegments(segments, dashPattern) {
+      segments.forEach((seg) => {
+        ctx.lineWidth = seg.isSpur ? 1.5 : 2.5;
+        ctx.globalAlpha = seg.isSpur ? 0.45 : 1;
+        ctx.setLineDash(seg.hasTripod === false ? [] : dashPattern);
+        ctx.beginPath();
+        ctx.moveTo(canvasX(seg.from.lng), canvasY(seg.from.lat));
+        ctx.lineTo(canvasX(seg.to.lng), canvasY(seg.to.lat));
+        ctx.stroke();
+      });
+      ctx.globalAlpha = 1;
+    }
+
     // ---------- Connections ----------
     project.connections.forEach((conn) => {
       const style = State.CONNECTION_STYLES[conn.type] || State.CONNECTION_STYLES.path;
-      const pts = conn.pointIds.map((id) => State.getPoint(id)).filter(Boolean);
-      if (pts.length < 2) return;
-      const shouldClose = conn.type === "boundary" || ((conn.type === "traverse" || conn.type === "level") && conn.surveyType === "closed");
+      const dashPattern = style.dashArray ? style.dashArray.split(",").map(Number) : [];
       ctx.strokeStyle = style.color;
-      ctx.lineWidth = conn.type === "boundary" ? 3 : 2.5;
-      ctx.setLineDash(style.dashArray ? style.dashArray.split(",").map(Number) : []);
-      ctx.beginPath();
-      pts.forEach((p, i) => (i === 0 ? ctx.moveTo(canvasX(p.lng), canvasY(p.lat)) : ctx.lineTo(canvasX(p.lng), canvasY(p.lat))));
-      if (shouldClose && pts.length > 2) ctx.closePath();
-      ctx.stroke();
-      ctx.setLineDash([]);
+
+      if (conn.type === "level") {
+        // A leveling run doesn't walk point-to-point in sequence - see
+        // Leveling.computeAnchorSegments for why (tripod stays put for a
+        // plain Foresight, only relocates at a turning point).
+        drawSightingSegments(Leveling.computeAnchorSegments(conn), dashPattern);
+        ctx.setLineDash([]);
+        return;
+      }
+
+      if (conn.type === "traverse") {
+        // Standard procedure sets the instrument up directly over each
+        // station, so its Backsight/Foresight lines route through that
+        // station's own tripod (once placed) instead of one shared
+        // point-to-point chain - see computeStationSightingSegments.
+        drawSightingSegments(Traverse.computeStationSightingSegments(conn), dashPattern);
+        // A side shot is a detail reading off a station, never a station
+        // itself - the chain above never runs through it, so it gets its
+        // own, lighter sighting line (always a spur).
+        drawSightingSegments(Traverse.computeSideShotSegments(), dashPattern);
+        ctx.setLineDash([]);
+        return;
+      }
+
+      const pts = conn.pointIds.map((id) => State.getPoint(id)).filter(Boolean);
+      if (pts.length >= 2) {
+        const shouldClose = conn.type === "boundary";
+        ctx.lineWidth = conn.type === "boundary" ? 3 : 2.5;
+        ctx.setLineDash(dashPattern);
+        ctx.beginPath();
+        pts.forEach((p, i) => (i === 0 ? ctx.moveTo(canvasX(p.lng), canvasY(p.lat)) : ctx.lineTo(canvasX(p.lng), canvasY(p.lat))));
+        if (shouldClose && pts.length > 2) ctx.closePath();
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
     });
 
     // ---------- Points ----------
@@ -309,6 +360,16 @@ const PlanView = (() => {
       ctx.font = "bold 11px Segoe UI, Arial";
       ctx.textAlign = "left";
       haloText(ctx, p.id, x + 9, y - 8);
+    });
+
+    // ---------- Tripods ----------
+    (project.tripods || []).forEach((t) => {
+      const x = canvasX(t.lng), y = canvasY(t.lat);
+      shape(ctx, "square", x, y, 6, "#2c333b");
+      ctx.fillStyle = "#1c2530";
+      ctx.font = "bold 11px Segoe UI, Arial";
+      ctx.textAlign = "left";
+      haloText(ctx, t.id, x + 9, y - 8);
     });
 
     ctx.restore(); // end clip
@@ -342,7 +403,7 @@ const PlanView = (() => {
     ctx.font = "11px Segoe UI, Arial"; ctx.textAlign = "center";
     ctx.fillText(`${barUnitsFt} ${unit === "ft" ? "ft" : "ft (approx.)"}`, sbX + barPx / 2, sbY - 9);
 
-    drawLegend(ctx, W, padTop);
+    if (!opts.hideLegend) drawLegend(ctx, W, padTop);
     drawTitleBlock(ctx, project, W, H, titleBlockH);
   }
 
@@ -351,7 +412,9 @@ const PlanView = (() => {
     const featureEntries = Object.entries(State.FEATURE_STYLES);
     const connEntries = Object.entries(State.CONNECTION_STYLES);
     const rowH = 15;
-    const h = 24 + featureEntries.length * rowH + connEntries.length * rowH + 14;
+    // +3 extra rows: Tripod Setup, plus a side-shot line under both Leveling
+    // and Traverse (see the connEntries loop below).
+    const h = 24 + featureEntries.length * rowH + connEntries.length * rowH + rowH * 3 + 14;
     ctx.fillStyle = "rgba(255,255,255,0.94)";
     ctx.strokeStyle = "#c7cfd6";
     ctx.lineWidth = 1;
@@ -372,16 +435,36 @@ const PlanView = (() => {
       cy += rowH;
     });
     cy += 4;
-    connEntries.forEach(([, style]) => {
+    connEntries.forEach(([type, style]) => {
       ctx.strokeStyle = style.color;
       ctx.lineWidth = 2.5;
       ctx.setLineDash(style.dashArray ? style.dashArray.split(",").map(Number) : []);
       ctx.beginPath(); ctx.moveTo(x + 10, cy - 4); ctx.lineTo(x + 26, cy - 4); ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle = "#1c2530";
+      if (type === "level" || type === "traverse") {
+        ctx.fillText(style.label, x + 30, cy);
+        cy += rowH;
+        // Leveling and Traverse both distinguish their chain (Benchmark/
+        // Turning Point, or a station) from a side shot - see
+        // computeAnchorSegments / computeSideShotSegments.
+        ctx.strokeStyle = style.color;
+        ctx.globalAlpha = 0.45;
+        ctx.setLineDash(style.dashArray ? style.dashArray.split(",").map(Number) : []);
+        ctx.beginPath(); ctx.moveTo(x + 10, cy - 4); ctx.lineTo(x + 26, cy - 4); ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.setLineDash([]);
+        ctx.fillStyle = "#1c2530";
+        ctx.fillText(`${style.label} (side shot)`, x + 30, cy);
+        cy += rowH;
+        return;
+      }
       ctx.fillText(style.label, x + 30, cy);
       cy += rowH;
     });
+    shape(ctx, "square", x + 16, cy - 4, 5, "#2c333b");
+    ctx.fillStyle = "#1c2530";
+    ctx.fillText("Tripod Setup", x + 30, cy);
   }
 
   function drawTitleBlock(ctx, project, W, H, titleBlockH) {
