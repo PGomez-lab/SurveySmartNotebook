@@ -317,6 +317,11 @@
             <p class="hint-text" style="margin:0 0 4px;">Standard procedure: the instrument turns an angle BETWEEN two lines - the Backsight (to the previous point) and the Foresight (to the next one). Each line is its own sighting - its own Tripod and its own raw angle reading - since a Backsight can come from a different setup (e.g. a free-station resection) than the Foresight. Record each line's own reading first, then work out the Interior Angle from the two.</p>
 
             <p class="hint-text" style="margin:8px 0 4px;"><strong>Backsight Line</strong> (to the previous point)</p>
+            <label class="form-full">Angle measured from
+              <select id="pf_travBsAngleFrom">
+                <option value="">(defaults to the previous point)</option>
+              </select>
+            </label>
             <div class="form-row">
               <label>Tripod Setup
                 <select id="pf_travBsTripod">
@@ -340,6 +345,11 @@
             </label>
 
             <p class="hint-text" style="margin:8px 0 4px;"><strong>Foresight Line</strong> (to the next point)</p>
+            <label class="form-full">Angle measured from
+              <select id="pf_travFsAngleFrom">
+                <option value="">(defaults to the next point)</option>
+              </select>
+            </label>
             <div class="form-row">
               <label>Tripod Setup
                 <select id="pf_travFsTripod">
@@ -363,11 +373,6 @@
             </label>
 
             <p class="hint-text" style="margin:8px 0 4px;">Now work out the Interior Angle from your two readings above.</p>
-            <label class="form-full">Angle measured from
-              <select id="pf_travAngleFrom">
-                <option value="">(pick the backsight or foresight point)</option>
-              </select>
-            </label>
             <label class="form-full">Interior Angle (work out by hand: Foresight reading &minus; Backsight reading)
               <input type="text" id="pf_fieldAngle" placeholder="e.g. 89&deg;42'15&quot;" />
             </label>
