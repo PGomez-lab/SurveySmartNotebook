@@ -26,9 +26,6 @@
     <label>Team Name
       <input type="text" id="teamName" placeholder="e.g. Team Falcon" />
     </label>
-    <label>Team Members
-      <input type="text" id="teamMembers" placeholder="e.g. Alex, Jordan, Sam" />
-    </label>
     <label>Date
       <input type="date" id="projectDate" />
     </label>
@@ -41,7 +38,7 @@
     <label>Type of Survey
       <select id="projectSurveyType" title="Scopes the app to just this survey type's tools and fields">
         <option value="none">General / Mixed</option>
-        <option value="levelingPoints">Differential Leveling &mdash; Points (open)</option>
+        <option value="levelingPoints">Differential Leveling &mdash; Rods (open)</option>
         <option value="levelingLoop">Differential Leveling &mdash; Loop (closed)</option>
         <option value="traverseOpen">Traverse &mdash; Open</option>
         <option value="traverseClosed">Traverse &mdash; Closed</option>
@@ -52,25 +49,27 @@
 
 <div class="toolbar">
   <div class="tool-group">
-    <button id="btnUndo" class="tool-btn subtle" disabled title="Undo the last change (add/edit/delete a point or connection)">&#8617; Undo</button>
+    <button id="btnUndo" class="tool-btn subtle" disabled title="Undo the last change (add/edit/delete a rod or connection)">&#8617; Undo</button>
   </div>
 
   <div class="tool-group">
-    <button id="btnAddPoint" class="tool-btn" data-mode="add" title="Click the map to add survey points">
-      <span class="ic">&#128204;</span> Add Point
+    <button id="btnAddPoint" class="tool-btn" data-mode="add" title="Click the map to add survey rods">
+      <span class="ic">&#128204;</span> Add Rod
     </button>
-    <button id="btnAddTripod" class="tool-btn" data-mode="tripod" title="Click the map to place the instrument/tripod's actual setup location - differential leveling sighting lines route through it">
-      <span class="ic">&#9698;</span> Add Tripod
+    <button id="btnAddTripod" class="tool-btn" data-mode="tripod" title="Click the map to place the instrument's actual setup location - differential leveling and traverse sighting lines route through it">
+      <span class="ic">&#9698;</span> Add Instrument
     </button>
-    <button id="btnConnect" class="tool-btn" data-mode="connect" title="Click points in order to connect them">
-      <span class="ic">&#128279;</span> Connect Points
-    </button>
-    <select id="connectType" title="Type of connection to draw (Traverse and Differential Leveling build themselves automatically from points' Survey Type - see the Traverse Table / Leveling tabs)">
-      <option value="path">Survey Path</option>
-      <option value="boundary">Boundary</option>
-    </select>
-    <button id="btnUndoConnect" class="tool-btn subtle" disabled title="Remove the last clicked point">&#8630; Undo Point</button>
-    <button id="btnFinishConnect" class="tool-btn subtle" disabled>Finish Line</button>
+    <span id="connectToolGroup">
+      <button id="btnConnect" class="tool-btn" data-mode="connect" title="Click rods in order to connect them">
+        <span class="ic">&#128279;</span> Connect Rods
+      </button>
+      <select id="connectType" title="Type of connection to draw (Traverse and Differential Leveling build themselves automatically from rods' Survey Type - see the Traverse Table / Leveling tabs)">
+        <option value="path">Survey Path</option>
+        <option value="boundary">Boundary</option>
+      </select>
+      <button id="btnUndoConnect" class="tool-btn subtle" disabled title="Remove the last clicked rod">&#8630; Undo Rod</button>
+      <button id="btnFinishConnect" class="tool-btn subtle" disabled>Finish Line</button>
+    </span>
   </div>
 
   <div class="tool-group">
@@ -80,7 +79,7 @@
 
   <div class="tool-group">
     <button id="btnExport" class="tool-btn primary">&#8681; Export Survey Report (PDF)</button>
-    <button id="btnEmailReport" class="tool-btn subtle" title="Download the PDF and open your email client to send it">&#9993; Email Report</button>
+    <button id="btnExportCsv" class="tool-btn subtle" title="Download the Field Notebook, Traverse, and Leveling data as a CSV file">&#8681; Download CSV</button>
   </div>
 
   <div class="tool-group">
@@ -111,7 +110,7 @@
       <table id="notebookTable" class="notebook-table">
         <thead>
           <tr>
-            <th data-sort="id">Point</th>
+            <th data-sort="id">Rod</th>
             <th data-sort="northing" class="col-northing">Northing</th>
             <th data-sort="easting" class="col-easting">Easting</th>
             <th data-sort="elevation">Elevation (ft)</th>
@@ -126,7 +125,7 @@
         </thead>
         <tbody id="notebookBody"></tbody>
       </table>
-      <p class="empty-hint" id="notebookEmptyHint">No points yet &mdash; click <strong>Add Point</strong> then click the map to start your field notebook.</p>
+      <p class="empty-hint" id="notebookEmptyHint">No rods yet &mdash; click <strong>Add Rod</strong> then click the map to start your field notebook.</p>
     </div>
 
     <div class="tab-panel" id="tab-traverse">
@@ -147,13 +146,7 @@
 <div class="modal-overlay hidden" id="startupModalOverlay">
   <div class="modal">
     <h2>Start Your Survey</h2>
-    <p class="hint-text">Set up your team before you start collecting points. You can change any of this later from the header. Your work is saved on this computer for 24 hours, so if your laptop dies or runs out of battery, come back and reopen this page to pick up right where you left off.</p>
-    <label class="form-full">Team Name <span class="required-mark">*</span>
-      <input type="text" id="su_teamName" placeholder="e.g. Team Falcon" />
-    </label>
-    <label class="form-full">Team Members <span class="required-mark">*</span>
-      <textarea id="su_teamMembers" rows="2" placeholder="e.g. Alex Kim, Jordan Rivera, Sam Patel"></textarea>
-    </label>
+    <p class="hint-text">Set up your team before you start collecting rods. You can change any of this later from the header. Your work is saved on this computer for 24 hours, so if your laptop dies or runs out of battery, come back and reopen this page to pick up right where you left off.</p>
     <label class="form-full">Title of the Work
       <input type="text" id="su_title" placeholder="e.g. Fort Greene Park Smart Survey" />
     </label>
@@ -165,14 +158,14 @@
         <select id="su_surveyType">
           <option value="" disabled selected>-- Select --</option>
           <option value="none">General / Mixed</option>
-          <option value="levelingPoints">Differential Leveling &mdash; Points (open)</option>
+          <option value="levelingPoints">Differential Leveling &mdash; Rods (open)</option>
           <option value="levelingLoop">Differential Leveling &mdash; Loop (closed)</option>
           <option value="traverseOpen">Traverse &mdash; Open</option>
           <option value="traverseClosed">Traverse &mdash; Closed</option>
         </select>
       </label>
     </div>
-    <p class="hint-text">Setting a Type of Survey here just sets the default Survey Type for new points &mdash; you can still change it per point.</p>
+    <p class="hint-text">Setting a Type of Survey here just sets the default Survey Type for new rods &mdash; you can still change it per rod.</p>
     <p class="hint-text error-text hidden" id="su_error"></p>
     <div class="modal-actions">
       <div class="spacer"></div>
@@ -184,10 +177,10 @@
 <!-- Point editor modal -->
 <div class="modal-overlay hidden" id="pointModalOverlay">
   <div class="modal">
-    <h2 id="pointModalTitle">Add Survey Point</h2>
+    <h2 id="pointModalTitle">Add Survey Rod</h2>
     <form id="pointForm">
       <div class="form-row">
-        <label>Point ID
+        <label>Rod ID
           <input type="text" id="pf_id" required />
         </label>
         <label>Date Collected
@@ -225,40 +218,41 @@
             <option>Building Corner</option>
             <option>Utility Feature</option>
             <option>Benchmark</option>
-            <option>Turning Point</option>
+            <option>Turning Rod</option>
+            <option>Branch</option>
             <option>Other</option>
           </select>
         </label>
       </div>
       <label class="form-full">Survey Type
         <select id="pf_surveyCategory">
-          <option value="none">General Point</option>
-          <option value="levelingPoints">Differential Leveling &mdash; Points (open)</option>
+          <option value="none">General Rod</option>
+          <option value="levelingPoints">Differential Leveling &mdash; Rods (open)</option>
           <option value="levelingLoop">Differential Leveling &mdash; Loop (closed)</option>
           <option value="traverseOpen">Traverse &mdash; Open</option>
           <option value="traverseClosed">Traverse &mdash; Closed</option>
         </select>
       </label>
       <div class="form-full instrument-fields hidden" id="pf_instrumentFieldsRow">
-        <p class="hint-text" style="margin:0 0 6px;">Instrument readings for this point (total station / theodolite / level)</p>
+        <p class="hint-text" style="margin:0 0 6px;">Instrument readings for this rod (total station / theodolite / level)</p>
 
         <!-- Differential leveling only: with one rod and one instrument, a
-             regular point only ever gets ONE reading right now - the
+             regular rod only ever gets ONE reading right now - the
              Foresight sighting it from the current setup - so that's what's
              asked for by default. The starting Benchmark is the exception:
              it has no incoming shot, only the outgoing Backsight that
              establishes the first setup's HI, so it asks for BS/HI instead
-             and never shows FS. A turning point (flag it via Feature Type,
-             or check the box below) additionally gets a Backsight once the
+             and never shows FS. A turning rod (flag it via Feature Type, or
+             check the box below) additionally gets a Backsight once the
              instrument moves ahead and starts a new setup with the rod still
-             here - two different distances at the same point, each recorded
-             two ways: stadia hairs and a taped measurement. -->
+             here - two different distances at the same rod, each recorded
+             three ways: stadia hairs, a taped measurement, and pacing. -->
         <div class="hidden" id="pf_levelFsBlock">
-          <p class="hint-text" style="margin:0 0 4px;"><strong>Foresight (FS)</strong> - <span id="pf_levelFsHint">sighting this point from the current setup</span></p>
+          <p class="hint-text" style="margin:0 0 4px;"><strong>Foresight (FS)</strong> - <span id="pf_levelFsHint">sighting this rod from the current setup</span></p>
           <div class="form-row">
-            <label>Tripod Setup
+            <label>Instrument Setup
               <select id="pf_levelFsTripod">
-                <option value="">no tripod placed yet</option>
+                <option value="">no instrument placed yet</option>
               </select>
             </label>
           </div>
@@ -267,7 +261,10 @@
               <input type="number" step="0.01" id="pf_levelFs" placeholder="ft" />
             </label>
             <label>FS Dist. (Taped)
-              <input type="number" step="0.1" id="pf_levelFsDistTaped" placeholder="ft" />
+              <input type="number" step="0.01" id="pf_levelFsDistTaped" placeholder="ft" />
+            </label>
+            <label>FS Dist. (Pacing)
+              <input type="number" step="0.01" id="pf_levelFsDistPacing" placeholder="ft" />
             </label>
           </div>
           <div class="form-row">
@@ -280,15 +277,15 @@
           </div>
           <label class="form-row-check">
             <input type="checkbox" id="pf_levelIsTurningPoint" />
-            This point is a turning point (a new instrument setup starts here)
+            This rod is a turning rod (a new instrument setup starts here)
           </label>
         </div>
         <div class="hidden" id="pf_levelBsBlock">
           <p class="hint-text" style="margin:0 0 4px;"><strong>Backsight (BS)</strong> - <span id="pf_levelBsHint">starting a new setup here</span></p>
           <div class="form-row">
-            <label>Tripod Setup
+            <label>Instrument Setup
               <select id="pf_levelBsTripod">
-                <option value="">no tripod placed yet</option>
+                <option value="">no instrument placed yet</option>
               </select>
             </label>
           </div>
@@ -297,7 +294,10 @@
               <input type="number" step="0.01" id="pf_levelBs" placeholder="ft" />
             </label>
             <label>BS Dist. (Taped)
-              <input type="number" step="0.1" id="pf_levelBsDistTaped" placeholder="ft" />
+              <input type="number" step="0.01" id="pf_levelBsDistTaped" placeholder="ft" />
+            </label>
+            <label>BS Dist. (Pacing)
+              <input type="number" step="0.01" id="pf_levelBsDistPacing" placeholder="ft" />
             </label>
           </div>
           <div class="form-row">
@@ -313,10 +313,17 @@
         <div class="form-full hidden" id="pf_traverseReadingsRow">
           <label class="form-row-check">
             <input type="checkbox" id="pf_isSideShot" />
-            This is a side shot (a detail point read from the current setup - not part of the traverse chain)
+            This is a side shot (a detail rod read from the current setup - not part of the traverse chain)
           </label>
           <div id="pf_traverseStationFields">
-            <p class="hint-text" style="margin:0 0 4px;">Bearing/Azimuth ahead - point the instrument/compass toward where you're headed next and read it now, even before that point is placed.</p>
+            <div class="form-row">
+              <label>Instrument Setup
+                <select id="pf_travInstrument">
+                  <option value="">no instrument placed yet</option>
+                </select>
+              </label>
+            </div>
+            <p class="hint-text" style="margin:0 0 4px;">Bearing/Azimuth ahead - point the instrument/compass toward where you're headed next and read it now, even before that rod is placed.</p>
             <div class="form-row">
               <label>Bearing
                 <input type="text" id="pf_fieldBearing" placeholder="N 00&deg;00'00&quot; E" />
@@ -328,20 +335,20 @@
 
             <p class="hint-text" id="pf_travLineHeading" style="margin:8px 0 4px;font-weight:600;color:#1c2530;"></p>
             <label class="form-full" id="pf_travLineRow">Distance (Taped/EDM) - the line you just walked to get here
-              <input type="number" step="0.1" id="pf_travDistTaped" placeholder="ft" />
+              <input type="number" step="0.01" id="pf_travDistTaped" placeholder="ft" />
             </label>
             <label class="form-full" id="pf_fieldAngleRow">
               <span id="pf_fieldAngleLabel">What's the interior angle here?</span>
               <input type="text" id="pf_fieldAngle" placeholder="e.g. 89&deg;42'15&quot;" />
             </label>
-            <p class="hint-text" id="pf_travLineHint" style="margin:0;">This point needs a point placed before it - Distance and Interior Angle only exist once there's a line behind you to have walked and turned from.</p>
+            <p class="hint-text" id="pf_travLineHint" style="margin:0;">This rod needs a rod placed before it - Distance and Interior Angle only exist once there's a line behind you to have walked and turned from.</p>
           </div>
           <div class="hidden" id="pf_sideShotBlock">
-            <p class="hint-text" style="margin:0 0 4px;"><strong>Side Shot</strong> - a single angle + distance from wherever the instrument is currently set up, same idea as a leveling run's plain (non-turning) point.</p>
+            <p class="hint-text" style="margin:0 0 4px;"><strong>Side Shot</strong> - a single angle + distance from wherever the instrument is currently set up, same idea as a leveling run's plain (non-turning) rod.</p>
             <div class="form-row">
               <label>Sighted From
                 <select id="pf_sideShotFrom">
-                  <option value="">no point placed yet</option>
+                  <option value="">no rod placed yet</option>
                 </select>
               </label>
               <label>Angle
@@ -358,7 +365,7 @@
             </div>
             <div class="form-row">
               <label>Distance (Taped)
-                <input type="number" step="0.1" id="pf_sideShotDistTaped" placeholder="ft" />
+                <input type="number" step="0.01" id="pf_sideShotDistTaped" placeholder="ft" />
               </label>
             </div>
             <div class="form-row">
@@ -372,7 +379,7 @@
           </div>
         </div>
       </div>
-      <p class="hint-text form-full hidden" id="pf_adjustedNote">The Corrected/Adjusted Angle, Bearing, and Azimuth for this point are entered later, in the Traverse Table &mdash; they depend on the whole traverse's angular closure, not just this one point.</p>
+      <p class="hint-text form-full hidden" id="pf_adjustedNote">The Corrected/Adjusted Angle, Bearing, and Azimuth for this rod are entered later, in the Traverse Table &mdash; they depend on the whole traverse's angular closure, not just this one rod.</p>
       <label class="form-full">Description
         <input type="text" id="pf_description" placeholder="e.g. Cracked concrete panel, NW corner" />
       </label>
@@ -384,10 +391,10 @@
         <img id="pf_photoPreview" class="photo-preview hidden" />
       </label>
       <div class="modal-actions">
-        <button type="button" class="tool-btn danger" id="pf_deleteBtn">Delete Point</button>
+        <button type="button" class="tool-btn danger" id="pf_deleteBtn">Delete Rod</button>
         <div class="spacer"></div>
         <button type="button" class="tool-btn subtle" id="pf_cancelBtn">Cancel</button>
-        <button type="submit" class="tool-btn primary">Save Point</button>
+        <button type="submit" class="tool-btn primary">Save Rod</button>
       </div>
     </form>
   </div>
@@ -425,6 +432,7 @@
 <script src="js/leveling.js"></script>
 <script src="js/planview.js"></script>
 <script src="js/pdfexport.js"></script>
+<script src="js/csvexport.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

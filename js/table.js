@@ -67,7 +67,7 @@ const Table = (() => {
       if (locateBtn) MapView.flyToPoint(locateBtn.dataset.id);
       if (photo) emit("editRequest", photo.dataset.id);
       if (delBtn) {
-        if (confirm(`Delete point ${delBtn.dataset.id}? This cannot be undone.`)) {
+        if (confirm(`Delete rod ${delBtn.dataset.id}? This cannot be undone.`)) {
           State.deletePoint(delBtn.dataset.id);
         }
       }
@@ -82,7 +82,7 @@ const Table = (() => {
       if (!raw || raw === id) return render(State.getProject());
       const clash = State.getProject().points.some((p) => p.id === raw && p.id !== id);
       if (clash) {
-        alert(`Point ID "${raw}" is already used.`);
+        alert(`Rod ID "${raw}" is already used.`);
         return render(State.getProject());
       }
       State.updatePoint(id, { id: raw });

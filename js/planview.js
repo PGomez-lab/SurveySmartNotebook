@@ -134,12 +134,20 @@ const PlanView = (() => {
         ctx.stroke();
         break;
       }
-      case "triangleOutline": // Turning Point
+      case "triangleOutline": // Turning Rod
         ctx.lineWidth = 2;
         ctx.moveTo(x, y - r * 1.2);
         ctx.lineTo(x + r, y + r * 0.8);
         ctx.lineTo(x - r, y + r * 0.8);
         ctx.closePath();
+        ctx.stroke();
+        break;
+      case "plus": // Branch
+        ctx.lineWidth = 2.5;
+        ctx.moveTo(x - r * 1.1, y);
+        ctx.lineTo(x + r * 1.1, y);
+        ctx.moveTo(x, y - r * 1.1);
+        ctx.lineTo(x, y + r * 1.1);
         ctx.stroke();
         break;
       default: // Other
@@ -157,7 +165,8 @@ const PlanView = (() => {
     "Building Corner": "squareOutline",
     "Utility Feature": "triangleDown",
     "Benchmark": "hexagon",
-    "Turning Point": "triangleOutline",
+    "Turning Rod": "triangleOutline",
+    "Branch": "plus",
     "Other": "ringOutline",
   };
 
@@ -251,7 +260,7 @@ const PlanView = (() => {
       ctx.fillStyle = "#1c2530";
       ctx.font = "bold 16px Segoe UI, Arial";
       ctx.textAlign = "center";
-      haloText(ctx, "No survey points collected yet.", W / 2, padTop + drawHeight / 2);
+      haloText(ctx, "No survey rods collected yet.", W / 2, padTop + drawHeight / 2);
       drawTitleBlock(ctx, project, W, H, titleBlockH);
       return;
     }
@@ -513,7 +522,7 @@ const PlanView = (() => {
     });
     shape(ctx, "square", x + 16, cy - 4, 5, "#2c333b");
     ctx.fillStyle = "#1c2530";
-    ctx.fillText("Tripod Setup", x + 30, cy);
+    ctx.fillText("Instrument Setup", x + 30, cy);
   }
 
   function drawTitleBlock(ctx, project, W, H, titleBlockH) {
@@ -531,7 +540,7 @@ const PlanView = (() => {
     ctx.font = "12px Segoe UI, Arial";
     ctx.fillStyle = "#4b5a68";
     ctx.fillText(`Coordinate System: ${Coords.systemLabel()}`, 24, top + 44);
-    ctx.fillText(`Points: ${project.points.length}    Connections: ${project.connections.length}`, 24, top + 62);
+    ctx.fillText(`Rods: ${project.points.length}    Connections: ${project.connections.length}`, 24, top + 62);
 
     ctx.textAlign = "right";
     ctx.fillStyle = "#1c2530";

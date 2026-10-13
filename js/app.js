@@ -47,7 +47,6 @@
   function populateMetaInputs(project) {
     el("projectTitle").value = project.meta.title || "";
     el("teamName").value = project.meta.teamName || "";
-    el("teamMembers").value = project.meta.teamMembers || "";
     el("projectDate").value = project.meta.date || "";
     el("coordSystem").value = project.meta.coordSystem || "EPSG:2263";
     el("projectSurveyType").value = project.meta.surveyType || "none";
@@ -62,7 +61,6 @@
     [
       ["projectTitle", project.meta.title],
       ["teamName", project.meta.teamName],
-      ["teamMembers", project.meta.teamMembers],
       ["projectDate", project.meta.date],
       ["coordSystem", project.meta.coordSystem || "EPSG:2263"],
       ["projectSurveyType", project.meta.surveyType || "none"],
@@ -114,8 +112,22 @@
     }
   }
 
+  // Connect Rods (Survey Path/Boundary) is superfluous once a project is
+  // scoped to Differential Leveling - that run already builds itself
+  // automatically from rods' own Survey Type (see syncOneAutoRun), so a
+  // manual "connect" step there would only be confusing. Hidden here rather
+  // than disabled so it doesn't clutter the toolbar for a scope it doesn't
+  // apply to.
+  function applyConnectToolScope(scope) {
+    const hide = scope === "leveling";
+    el("connectToolGroup").classList.toggle("hidden", hide);
+    if (hide && mode === "connect") setMode("connect"); // toggles back to idle
+  }
+
   function applySurveyScope(project) {
-    applyTabScope(surveyScope(project.meta.surveyType));
+    const scope = surveyScope(project.meta.surveyType);
+    applyTabScope(scope);
+    applyConnectToolScope(scope);
   }
 
   // Rebuilds the point editor's Survey Type options to match the project's
@@ -147,13 +159,13 @@
 
     const banner = el("modeBanner");
     if (mode === "add") {
-      banner.textContent = "Click the map to add a survey point.";
+      banner.textContent = "Click the map to add a survey rod.";
       banner.classList.remove("hidden");
     } else if (mode === "tripod") {
-      banner.textContent = "Click the map where the tripod/instrument is actually set up.";
+      banner.textContent = "Click the map where the instrument is actually set up.";
       banner.classList.remove("hidden");
     } else if (mode === "connect") {
-      banner.textContent = "Click points in order to connect them (click a point again to deselect it), then press Finish Line.";
+      banner.textContent = "Click rods in order to connect them (click a rod again to deselect it), then press Finish Line.";
       banner.classList.remove("hidden");
     } else {
       banner.classList.add("hidden");
@@ -203,7 +215,7 @@
     el("pf_levelFsBlock").classList.toggle("hidden", modalIsBenchmark && !isClosedSurvey);
     el("pf_levelBsBlock").classList.toggle("hidden", !modalIsBenchmark && !isTurningPoint);
     el("pf_levelBsHint").textContent = modalIsBenchmark ? "the starting known elevation" : "starting a new setup here";
-    el("pf_levelFsHint").textContent = modalIsBenchmark ? "closing the loop back onto this point (fill in once you've walked the whole loop)" : "sighting this point from the current setup";
+    el("pf_levelFsHint").textContent = modalIsBenchmark ? "closing the loop back onto this rod (fill in once you've walked the whole loop)" : "sighting this rod from the current setup";
     el("pf_levelIsTurningPoint").closest("label").classList.toggle("hidden", modalIsBenchmark);
   }
 
@@ -238,8 +250,8 @@
     const lastStation = stations.length ? stations[stations.length - 1].id : "";
     const fallback = selectedId != null ? selectedId : lastStation;
     selectEl.innerHTML =
-      `<option value="">no point placed yet</option>` +
-      (stations.length ? `<optgroup label="Points">${stations.map((s) => `<option value="${s.id}">${s.id}</option>`).join("")}</optgroup>` : "");
+      `<option value="">no rod placed yet</option>` +
+      (stations.length ? `<optgroup label="Rods">${stations.map((s) => `<option value="${s.id}">${s.id}</option>`).join("")}</optgroup>` : "");
     selectEl.value = fallback || "";
   }
 
@@ -255,20 +267,27 @@
     populateSightedFromSelect(el("pf_sideShotFrom"), p.sightedFromId, p.id);
   }
 
-  // A traverse station records three things, but not all at the same
-  // instant. Bearing/Azimuth is a forward field reading - the direction of
-  // THIS point's own outgoing line, readable the moment you're standing
-  // here (point the instrument/compass ahead and read it) even before the
-  // next point exists - always fillable, no gating. Distance is the length
-  // of the line you just walked to GET here - only knowable once there's a
-  // point behind you to have measured from, so it stays blank until this
-  // point has a previous one. The Interior Angle is the turn from that
-  // incoming line's azimuth (recorded back at the previous point) into this
-  // point's own outgoing azimuth (just entered above) - same one point
-  // behind you, no point ahead needed either. Both are labeled by segment
-  // ("line AB") using the previous point's ID and this one's.
+  // A traverse station records four things, but not all at the same
+  // instant. Instrument Setup is which placed instrument was actually
+  // centered over this rod - one setup sights both the backsight (previous
+  // rod) and foresight (next rod) at once, unlike Leveling's separate
+  // Foresight/Backsight setups (where the instrument physically relocates
+  // between an incoming and outgoing shot). Bearing/Azimuth is a forward
+  // field reading - the direction of THIS rod's own outgoing line, readable
+  // the moment you're standing here (point the instrument/compass ahead and
+  // read it) even before the next rod exists - always fillable, no gating.
+  // Distance is the length of the line you just walked to GET here - only
+  // knowable once there's a rod behind you to have measured from, so it
+  // stays blank until this rod has a previous one. The Interior Angle is the
+  // turn from that incoming line's azimuth (recorded back at the previous
+  // rod) into this rod's own outgoing azimuth (just entered above) - it
+  // needs that same previous rod AND an outgoing line of its own to turn
+  // into, so a true open-run dead end (no rod ahead, ever) never shows it.
+  // Both are labeled by segment ("line AB") using the previous rod's ID and
+  // this one's.
   function populateTraverseStationFields(p) {
     const num = (v) => (v === null || v === undefined ? "" : v);
+    populateTripodSelect(el("pf_travInstrument"), p.instrumentId);
     el("pf_fieldBearing").value = p.fieldBearing || "";
     el("pf_fieldAzimuth").value = p.fieldAzimuth || "";
     el("pf_travDistTaped").value = num(p.fsDistTaped);
@@ -284,7 +303,8 @@
     const idx = stations.findIndex((pt) => pt.id === p.id);
     const n = stations.length;
     const traverseConn = State.getProject().connections.find((c) => c.type === "traverse");
-    const closed = idx >= 0 && n > 1 && traverseConn && traverseConn.surveyType === "closed";
+    const isClosedSurveyType = !!(traverseConn && traverseConn.surveyType === "closed");
+    const closed = idx >= 0 && n > 1 && isClosedSurveyType;
     const prevPt = idx >= 0
       ? (closed ? stations[(idx - 1 + n) % n] : idx > 0 ? stations[idx - 1] : null)
       : (n ? stations[n - 1] : null);
@@ -293,9 +313,14 @@
     // openPointModalForNew) - use that instead of leaving the label blank.
     const thisLabel = p.id || el("pf_id").value;
     const hasIncoming = !!prevPt;
+    // A closed run always has an outgoing leg (the loop wraps); an open
+    // run's dead-end last station doesn't - a brand-new point, about to be
+    // appended as the new last station, is that dead end until another
+    // point is added after it.
+    const hasOutgoing = isClosedSurveyType || (idx >= 0 ? idx < n - 1 : false);
 
     el("pf_travLineRow").classList.toggle("hidden", !hasIncoming);
-    el("pf_fieldAngleRow").classList.toggle("hidden", !hasIncoming);
+    el("pf_fieldAngleRow").classList.toggle("hidden", !hasIncoming || !hasOutgoing);
     el("pf_travLineHint").classList.toggle("hidden", hasIncoming);
     el("pf_travLineHeading").classList.toggle("hidden", !hasIncoming);
     if (hasIncoming) {
@@ -326,7 +351,7 @@
       fallback = active && active !== avoidId ? active : "";
     }
     selectEl.innerHTML =
-      `<option value="">no tripod placed yet</option>` +
+      `<option value="">no instrument placed yet</option>` +
       tripods.map((t) => `<option value="${t.id}">${t.id}</option>`).join("");
     selectEl.value = fallback || "";
   }
@@ -337,10 +362,12 @@
     el("pf_levelFsStadiaTop").value = num(p.fsStadiaTop);
     el("pf_levelFsStadiaBottom").value = num(p.fsStadiaBottom);
     el("pf_levelFsDistTaped").value = num(p.fsDistTaped);
+    el("pf_levelFsDistPacing").value = num(p.fsDistPacing);
     el("pf_levelBs").value = num(p.bs);
     el("pf_levelBsStadiaTop").value = num(p.bsStadiaTop);
     el("pf_levelBsStadiaBottom").value = num(p.bsStadiaBottom);
     el("pf_levelBsDistTaped").value = num(p.bsDistTaped);
+    el("pf_levelBsDistPacing").value = num(p.bsDistPacing);
     el("pf_levelIsTurningPoint").checked = !!p.isTurningPoint;
     populateTripodSelect(el("pf_levelFsTripod"), p.fsTripodId);
     const fsEffective = p.fsTripodId != null ? p.fsTripodId : State.activeTripodId();
@@ -355,7 +382,7 @@
     pendingPhotoDataUrl = null;
     modalIsBenchmark = isBenchmarkPoint(id);
 
-    el("pointModalTitle").textContent = `Edit Survey Point ${p.id}`;
+    el("pointModalTitle").textContent = `Edit Survey Rod ${p.id}`;
     el("pf_id").value = p.id;
     el("pf_date").value = p.dateCollected || "";
     el("pf_lat").value = p.lat.toFixed(6);
@@ -390,8 +417,8 @@
     el("pointModalOverlay").classList.remove("hidden");
   }
 
-  // Opens the same modal for a point that hasn't been created yet - nothing
-  // is written to State until the student clicks Save Point (see
+  // Opens the same modal for a rod that hasn't been created yet - nothing
+  // is written to State until the student clicks Save Rod (see
   // handlePointFormSubmit), so Cancel truly cancels and Save is one single
   // undoable action.
   function openPointModalForNew(lat, lng) {
@@ -404,7 +431,7 @@
       ? State.getProject().meta.surveyType
       : "none";
 
-    el("pointModalTitle").textContent = "Add Survey Point";
+    el("pointModalTitle").textContent = "Add Survey Rod";
     el("pf_id").value = State.nextPointId();
     el("pf_date").value = new Date().toISOString().slice(0, 10);
     el("pf_lat").value = lat.toFixed(6);
@@ -412,8 +439,8 @@
     el("pf_northing").value = ne.northing.toFixed(2);
     el("pf_easting").value = ne.easting.toFixed(2);
     el("pf_elevation").value = "";
-    // Feature Type describes what the point physically is, independent of
-    // its survey role (benchmark/turning point) - it's never auto-set from
+    // Feature Type describes what the rod physically is, independent of
+    // its survey role (benchmark/turning rod) - it's never auto-set from
     // that role, so it stays exactly what the student picks.
     el("pf_featureType").value = "Other";
     buildSurveyCategoryOptions(defaultCategory);
@@ -450,11 +477,19 @@
     const newId = el("pf_id").value.trim();
     const clash = State.getProject().points.some((p) => p.id === newId && p.id !== editingPointId);
     if (clash) {
-      alert(`Point ID "${newId}" is already used by another point.`);
+      alert(`Rod ID "${newId}" is already used by another rod.`);
       return;
     }
 
-    const numOrNull = (v) => (v === "" ? null : parseFloat(v));
+    // Rounded to 2 decimals on save - every numeric field entered here
+    // (Leveling's BS/FS/stadia/distance, Traverse's distance/side-shot
+    // readings) is a real-world measurement recorded to the nearest
+    // hundredth, never more.
+    const numOrNull = (v) => {
+      if (v === "") return null;
+      const n = parseFloat(v);
+      return Number.isNaN(n) ? null : Math.round(n * 100) / 100;
+    };
     const elevRaw = el("pf_elevation").value;
     const cat = el("pf_surveyCategory").value;
     const leveling = isLevelingCategory(cat);
@@ -500,15 +535,21 @@
       bsStadiaTop: leveling ? numOrNull(el("pf_levelBsStadiaTop").value) : null,
       bsStadiaBottom: leveling ? numOrNull(el("pf_levelBsStadiaBottom").value) : null,
       bsDistTaped: leveling ? numOrNull(el("pf_levelBsDistTaped").value) : null,
+      bsDistPacing: leveling ? numOrNull(el("pf_levelBsDistPacing").value) : null,
       fsStadiaTop: leveling ? numOrNull(el("pf_levelFsStadiaTop").value) : null,
       fsStadiaBottom: leveling ? numOrNull(el("pf_levelFsStadiaBottom").value) : null,
       fsDistTaped: leveling ? numOrNull(el("pf_levelFsDistTaped").value) : isTravStation ? numOrNull(el("pf_travDistTaped").value) : null,
-      // Differential leveling only - which tripod setup each line's reading
-      // actually came from, so the map can draw the real sighting line
-      // instead of a straight point-to-point guess. Traverse has no tripod
-      // concept at all.
+      fsDistPacing: leveling ? numOrNull(el("pf_levelFsDistPacing").value) : null,
+      // Differential leveling only - which tripod setup each shot actually
+      // came from, so the map can draw the real sighting line instead of a
+      // straight rod-to-rod guess.
       fsTripodId: leveling ? (el("pf_levelFsTripod").value || null) : null,
       bsTripodId: leveling ? (el("pf_levelBsTripod").value || null) : null,
+      // Traverse only - which instrument setup was centered over THIS
+      // station when its interior angle was read (sights both the backsight
+      // and foresight at once). Irrelevant to a side shot, which has no
+      // interior angle of its own.
+      instrumentId: isTravStation ? (el("pf_travInstrument").value || null) : null,
       // A side shot's own single reading - the station it was sighted from,
       // plus angle/distance, independent of the whole traverse's closure, so
       // (unlike Correction/Adjusted) it's collected right here rather than
@@ -527,7 +568,7 @@
 
     if (pendingNewLatLng) {
       // Nothing was written to State on map click - this is the one and only
-      // mutation for "add a point", so it's a single step on the undo stack.
+      // mutation for "add a rod", so it's a single step on the undo stack.
       const { lat, lng } = pendingNewLatLng;
       const p = State.addPoint(lat, lng, patch);
       closePointModal();
@@ -541,14 +582,14 @@
 
   // ---------- Connection modal ----------
   // Only "Survey Path" and "Boundary" are drawn here now - Traverse and
-  // Differential Leveling runs are auto-built from points' own Survey Type
+  // Differential Leveling runs are auto-built from rods' own Survey Type
   // (see Traverse.renderPanel / Leveling.renderPanel), no manual line needed.
   function openConnectionModal() {
     if (connectSelection.length < 2) return;
     const typeSel = el("connectType").value;
     const label = State.CONNECTION_STYLES[typeSel].label;
     el("conn_name").value = "";
-    el("conn_summary").textContent = `${label}: ${connectSelection.join(" → ")} (${connectSelection.length} points)`;
+    el("conn_summary").textContent = `${label}: ${connectSelection.join(" → ")} (${connectSelection.length} rods)`;
     el("connModalOverlay").classList.remove("hidden");
   }
 
@@ -594,26 +635,6 @@
     });
   }
 
-  // Opens a pre-filled email draft (student picks the recipient) - a static,
-  // no-backend app can't attach the downloaded PDF automatically, so the
-  // toast reminds them to do that by hand before sending.
-  function openEmailDraft(project) {
-    const subject = `Survey Report - ${project.meta.title || "Untitled Survey"}`;
-    const body = [
-      `Survey Report: ${project.meta.title || "Untitled Survey"}`,
-      `Team: ${project.meta.teamName || ""}`,
-      `Team Members: ${project.meta.teamMembers || ""}`,
-      `Date: ${project.meta.date || ""}`,
-      `Coordinate System: ${Coords.systemLabel()}`,
-      "",
-      `Points collected: ${project.points.length}`,
-      `Connections: ${project.connections.length}`,
-      "",
-      "A PDF of this survey report was just downloaded to this computer. Browsers can't attach files to an email automatically, so please attach the downloaded PDF here before sending.",
-    ].join("\n");
-    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  }
-
   // ---------- Toolbar ----------
   function initToolbar() {
     el("btnUndo").addEventListener("click", () => {
@@ -650,18 +671,14 @@
       }
     });
 
-    el("btnEmailReport").addEventListener("click", async () => {
-      const project = State.getProject();
-      showToast("Building PDF report (fetching map imagery)...");
+    el("btnExportCsv").addEventListener("click", () => {
       try {
-        await PdfExport.generate(project);
+        CsvExport.generate(State.getProject());
+        showToast("CSV exported.");
       } catch (err) {
         console.error(err);
-        alert("Export failed: " + err.message);
-        return;
+        alert("CSV export failed: " + err.message);
       }
-      openEmailDraft(project);
-      showToast("PDF downloaded — attach it to the email that just opened.");
     });
 
     el("btnSaveJson").addEventListener("click", () => {
@@ -685,7 +702,7 @@
     });
 
     el("btnClearAll").addEventListener("click", () => {
-      if (confirm("Clear all survey points and connections? This cannot be undone.")) {
+      if (confirm("Clear all survey rods and connections? This cannot be undone.")) {
         State.clearAll();
         showToast("Project cleared.");
       }
@@ -696,7 +713,6 @@
   function initMetaFields() {
     el("projectTitle").addEventListener("change", (e) => State.setMeta({ title: e.target.value }));
     el("teamName").addEventListener("change", (e) => State.setMeta({ teamName: e.target.value }));
-    el("teamMembers").addEventListener("change", (e) => State.setMeta({ teamMembers: e.target.value }));
     el("projectDate").addEventListener("change", (e) => State.setMeta({ date: e.target.value }));
     el("coordSystem").addEventListener("change", (e) => {
       State.setMeta({ coordSystem: e.target.value });
@@ -714,10 +730,10 @@
     el("pf_cancelBtn").addEventListener("click", closePointModal);
     el("pf_deleteBtn").addEventListener("click", () => {
       if (!editingPointId) return;
-      if (confirm(`Delete point ${editingPointId}? This cannot be undone.`)) {
+      if (confirm(`Delete rod ${editingPointId}? This cannot be undone.`)) {
         State.deletePoint(editingPointId);
         closePointModal();
-        showToast("Point deleted.");
+        showToast("Rod deleted.");
       }
     });
     el("pointModalOverlay").addEventListener("click", (e) => {
@@ -757,8 +773,6 @@
   // ---------- Startup modal ----------
   function openStartupModal() {
     const project = State.getProject();
-    el("su_teamName").value = project.meta.teamName || "";
-    el("su_teamMembers").value = project.meta.teamMembers || "";
     el("su_title").value = project.meta.title || "";
     el("su_date").value = new Date().toISOString().slice(0, 10);
     el("su_surveyType").value = project.meta.surveyType || "";
@@ -770,19 +784,15 @@
     el("startupModalOverlay").classList.add("hidden");
   }
 
-  // Team Name, Team Members, and Type of Survey are all required before a
-  // team can start collecting points - a returning team (within the 24h save
-  // window, see storage.js) will find these already filled in from last
-  // time, so this only demands real input the first time.
+  // Type of Survey is the only required field before a team can start
+  // collecting rods - a returning team (within the 24h save window, see
+  // storage.js) will find it already filled in from last time. Team Name is
+  // no longer asked for here; it can still be filled in from the header.
   function initStartupModal() {
     el("su_startBtn").addEventListener("click", () => {
-      const teamName = el("su_teamName").value.trim();
-      const teamMembers = el("su_teamMembers").value.trim();
       const surveyType = el("su_surveyType").value;
 
       const missing = [];
-      if (!teamName) missing.push("Team Name");
-      if (!teamMembers) missing.push("Team Members");
       if (!surveyType) missing.push("Type of Survey");
 
       if (missing.length) {
@@ -793,14 +803,12 @@
       }
 
       State.setMeta({
-        teamName,
-        teamMembers,
         title: el("su_title").value.trim() || "Untitled Survey",
         date: el("su_date").value,
         surveyType,
       });
       closeStartupModal();
-      showToast("Survey set up — start adding points.");
+      showToast("Survey set up — start adding rods.");
     });
   }
 
@@ -811,26 +819,26 @@
         openPointModalForNew(latlng.lat, latlng.lng);
       } else if (mode === "tripod") {
         const tripod = State.addTripod(latlng.lat, latlng.lng);
-        showToast(`Placed tripod ${tripod.id} — the active setup for any new sighting.`);
+        showToast(`Placed instrument ${tripod.id} — the active setup for any new sighting.`);
         MapView.render(State.getProject());
       }
     });
     MapView.on("markerclick", (id) => {
       if (mode === "connect") toggleConnectSelection(id);
       // Leaflet markers don't bubble clicks to the map, so clicking exactly on
-      // an existing marker while in Add Point mode would otherwise silently
-      // do nothing (no new point, no feedback) - tell the student what happened.
-      else if (mode === "add") showToast(`That's existing point ${id} — click elsewhere on the map to add a new one.`);
-      else if (mode === "tripod") showToast(`That's existing point ${id}, not a tripod — click elsewhere to place a new one.`);
+      // an existing marker while in Add Rod mode would otherwise silently
+      // do nothing (no new rod, no feedback) - tell the student what happened.
+      else if (mode === "add") showToast(`That's existing rod ${id} — click elsewhere on the map to add a new one.`);
+      else if (mode === "tripod") showToast(`That's existing rod ${id}, not an instrument — click elsewhere to place a new one.`);
     });
     MapView.on("tripodclick", (id) => {
-      if (mode === "add") showToast(`That's tripod ${id}, not a point — click elsewhere on the map to add a new one.`);
-      else if (mode === "tripod") showToast(`That's existing tripod ${id} — click elsewhere on the map to place a new one.`);
+      if (mode === "add") showToast(`That's instrument ${id}, not a rod — click elsewhere on the map to add a new one.`);
+      else if (mode === "tripod") showToast(`That's existing instrument ${id} — click elsewhere on the map to place a new one.`);
     });
     MapView.on("deletetripodrequest", (id) => {
       State.deleteTripod(id);
       MapView.render(State.getProject());
-      showToast(`Deleted tripod ${id}.`);
+      showToast(`Deleted instrument ${id}.`);
     });
     MapView.on("editrequest", (id) => openPointModal(id));
     MapView.on("sightingclick", (pointId) => openPointModal(pointId));

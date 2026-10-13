@@ -14,7 +14,13 @@ const State = (() => {
     "Building Corner": { color: "#a5342a", code: "BC" },
     "Utility Feature": { color: "#6a3fa0", code: "UF" },
     "Benchmark": { color: "#7a4419", code: "BM" },
-    "Turning Point": { color: "#5a6672", code: "TP" },
+    "Turning Rod": { color: "#5a6672", code: "TP" },
+    // A rod with only a foresight reading - a side/spur reading off the
+    // current instrument setup, never a turning rod itself (no backsight, no
+    // new setup starts here). Differential Leveling already treats any
+    // non-benchmark, non-turning, non-closing rod this way by default; this
+    // Feature Type just lets a student flag one as such explicitly.
+    "Branch": { color: "#2f8f8f", code: "BR" },
     "Other": { color: "#3a3a3a", code: "OT" },
   };
 
@@ -28,8 +34,8 @@ const State = (() => {
   // Which survey campaign a point was collected for - set by the student when
   // adding/editing the point, independent of which connections it ends up in.
   const SURVEY_CATEGORIES = {
-    none: "General Point",
-    levelingPoints: "Differential Leveling — Points (open)",
+    none: "General Rod",
+    levelingPoints: "Differential Leveling — Rods (open)",
     levelingLoop: "Differential Leveling — Loop (closed)",
     traverseOpen: "Traverse — Open",
     traverseClosed: "Traverse — Closed",
@@ -63,7 +69,6 @@ const State = (() => {
       meta: {
         title: "Fort Greene Park Smart Survey",
         teamName: "",
-        teamMembers: "",
         date: todayIso(),
         surveyType: "",
         coordSystem: "EPSG:2263",
@@ -286,19 +291,32 @@ const State = (() => {
         bsStadiaTop: null,
         bsStadiaBottom: null,
         bsDistTaped: null,
+        // A rougher third distance method alongside stadia/taped - counted
+        // steps rather than instrument-read or taped, same field on both the
+        // Foresight and Backsight shot.
+        bsDistPacing: null,
         fsStadiaTop: null,
         fsStadiaBottom: null,
         fsDistTaped: null,
+        fsDistPacing: null,
         // Differential leveling only: which physical tripod setup each
         // reading was actually sighted from. A turning point's incoming
         // Foresight and outgoing Backsight can (and usually do) come from
         // two different tripod locations, since the instrument, not the
         // rod, is what moves. Null until a tripod has actually been placed
         // for it, in which case the map falls back to drawing the sighting
-        // line straight to the previous/next point instead. Traverse has no
-        // tripod concept at all - it sights straight point to point.
+        // line straight to the previous/next point instead.
         fsTripodId: null,
         bsTripodId: null,
+        // Traverse only: the instrument setup centered over THIS station
+        // when its interior angle was read - one setup sights both the
+        // backsight (previous station) and foresight (next station) at
+        // once, unlike Leveling's fsTripodId/bsTripodId (where the
+        // instrument physically relocates between the incoming and outgoing
+        // shot). Null until an instrument has been placed for it, in which
+        // case the map falls back to drawing the sighting line straight
+        // between stations instead.
+        instrumentId: null,
         // Whether this point is a leveling turning point (a new instrument
         // setup starts here) - a survey ROLE, kept separate from Feature
         // Type (what the point physically is: a nail in a sidewalk, a rock
@@ -417,12 +435,13 @@ const State = (() => {
   function deleteTripod(id) {
     snapshotForUndo();
     project.tripods = project.tripods.filter((t) => t.id !== id);
-    // Points that had recorded a reading against this tripod keep the
+    // Points that had recorded a reading against this instrument keep the
     // reading itself but lose the map-line association - falls back to a
-    // direct point-to-point line, same as before any tripod existed.
+    // direct rod-to-rod line, same as before any instrument existed.
     project.points.forEach((p) => {
       if (p.fsTripodId === id) p.fsTripodId = null;
       if (p.bsTripodId === id) p.bsTripodId = null;
+      if (p.instrumentId === id) p.instrumentId = null;
     });
     persist();
   }

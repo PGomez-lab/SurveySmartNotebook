@@ -51,7 +51,7 @@ const PdfExport = (() => {
     doc.setFontSize(7.5);
     doc.setTextColor(140, 148, 156);
     doc.text("Smart Survey Notebook", MARGIN, PAGE_H - 8);
-    doc.text(`Points: ${project.points.length}   Connections: ${project.connections.length}`, PAGE_W - MARGIN, PAGE_H - 8, { align: "right" });
+    doc.text(`Rods: ${project.points.length}   Connections: ${project.connections.length}`, PAGE_W - MARGIN, PAGE_H - 8, { align: "right" });
   }
 
   // Same scoping rule the app UI uses (see surveyScope() in app.js) - a
@@ -135,9 +135,9 @@ const PdfExport = (() => {
   // 5 short-header columns, nothing like the Findings tables' 11-24 columns
   // of long labels) - lets a sparse project's dedicated page read as a real
   // full-page report instead of a few tiny rows stranded above dead space.
-  // Capped at 13pt: the Point/Elev. columns are only ~8% of the page width
+  // Capped at 13pt: the Rod/Elev. columns are only ~8% of the page width
   // each, and their own short header text starts ellipsizing past this -
-  // "Point" truncating to "Poi..." looks worse than the dead space it saves.
+  // "Rod" truncating to "Ro..." looks worse than the dead space it saves.
   const FILL_FONT_CANDIDATES_WIDE_OK = [
     { fontSize: 13, cellPadding: 4 },
     { fontSize: 11, cellPadding: 3.2 },
@@ -159,7 +159,7 @@ const PdfExport = (() => {
     return candidates[candidates.length - 1];
   }
 
-  // Condensed Survey Data Table - the essential point log. Full detail
+  // Condensed Survey Data Table - the essential rod log. Full detail
   // (Northing/Easting/Notes/Photo/etc.) is still in the app itself; this is
   // a summary, not a replacement.
   function drawDataTable(doc, project, x, y, w, maxY, style) {
@@ -173,15 +173,15 @@ const PdfExport = (() => {
     const allRows = project.points;
     const rowsToShow = allRows.slice(0, maxRows);
 
-    const head = ["Point", "Elev.", "Feature", "Survey Type", "Description"];
+    const head = ["Rod", "Elev.", "Feature", "Survey Type", "Description"];
     const body = rowsToShow.map((p) => [
       p.id,
       p.elevation === null || p.elevation === undefined || p.elevation === "" ? "--" : `${p.elevation}`,
       p.featureType,
-      State.SURVEY_CATEGORIES[p.surveyCategory || "none"] || "General Point",
+      State.SURVEY_CATEGORIES[p.surveyCategory || "none"] || "General Rod",
       p.description || "",
     ]);
-    const emptyRow = ["--", "--", "--", "--", "No points collected"];
+    const emptyRow = ["--", "--", "--", "--", "No rods collected"];
 
     doc.autoTable({
       head: [head],
@@ -236,7 +236,7 @@ const PdfExport = (() => {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(6.5);
     doc.setTextColor(90, 100, 110);
-    doc.text(`${t.name} - ${t.closed ? "closed" : "open"}, ${t.n} points, ${angleType}`, x, y + 6);
+    doc.text(`${t.name} - ${t.closed ? "closed" : "open"}, ${t.n} rods, ${angleType}`, x, y + 6);
 
     const tableStartY = y + 10;
     const closureH = 18; // reserve two lines (angular + linear closure summaries)
@@ -247,7 +247,7 @@ const PdfExport = (() => {
 
     doc.autoTable({
       head: [[
-        "Point", "Field Ang.", "Corr.", "Adj. Ang.",
+        "Rod", "Field Ang.", "Corr.", "Adj. Ang.",
         "Bearing", "Azimuth", "Dist.",
         "Adj. Bearing", "Adj. Azimuth", "Actual Bearing", "Actual Azimuth", "Actual Dist.",
       ]],
@@ -322,7 +322,7 @@ const PdfExport = (() => {
     doc.text(`${conn.name} - ${t.closed ? "closed" : "open"}, ${t.n} setup${t.n === 1 ? "" : "s"}`, x, y + 6);
 
     const tableStartY = y + 10;
-    const closureH = 10; // reserve one line for the arithmetic-check summary
+    const closureH = 10; // reserve one row for the arithmetic-check footer
     // This table's headers (11 columns) fit comfortably on one line even at
     // the largest shared font, but keep the same wrap-safety buffer as the
     // other findings tables just in case a narrow page shrinks columns.
@@ -333,9 +333,9 @@ const PdfExport = (() => {
 
     doc.autoTable({
       head: [
-        ["PT", "BS", "HI", "FS", "Elev.",
-          "FS Top", "FS Bot.", "FS Dist.",
-          "BS Top", "BS Bot.", "BS Dist."],
+        ["Rod", "BS", "HI", "FS", "Elev.",
+          "FS Top", "FS Bot.", "FS Dist. (Taped)", "FS Dist. (Pacing)",
+          "BS Top", "BS Bot.", "BS Dist. (Taped)", "BS Dist. (Pacing)"],
       ],
       body: rowsToShow.map((r) => [
         r.pointId + (r.isFirst ? (r.hasFsShot ? " (s/c)" : " (s)") : r.isClosingSetup ? " (final)" : r.isLast ? " (c)" : ""),
@@ -346,32 +346,31 @@ const PdfExport = (() => {
         fmt(r.fd.fsStadiaTop),
         fmt(r.fd.fsStadiaBottom),
         fmt(r.fd.fsDistTaped),
+        fmt(r.fd.fsDistPacing),
         fmt(r.fd.bsStadiaTop),
         fmt(r.fd.bsStadiaBottom),
         fmt(r.fd.bsDistTaped),
+        fmt(r.fd.bsDistPacing),
       ]),
+      // The arithmetic check is the table's own last row: Sum BS under BS,
+      // Sum FS under FS, Elev(last)-Elev(first) under Elev.
+      foot: [
+        ["Arith. check", raw(checks.sumBs), "", raw(checks.sumFs), raw(checks.elevDiff), "", "", "", "", "", "", "", ""],
+      ],
+      showFoot: "lastPage",
       startY: tableStartY,
       margin: { left: x },
       tableWidth: w,
       styles: { fontSize: style.fontSize, cellPadding: style.cellPadding, overflow: "ellipsize" },
       headStyles: { fillColor: [138, 63, 160], textColor: 255 },
+      footStyles: { fillColor: [235, 238, 241], textColor: [28, 37, 48], fontStyle: "bold" },
     });
     let ny = doc.lastAutoTable.finalY + 6;
     if (allRows.length > rowsToShow.length) {
       truncationNote(doc, x, ny, allRows.length - rowsToShow.length, w);
       ny += 8;
     }
-    if (ny > maxY - 8) return ny;
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.5);
-    doc.setTextColor(90, 100, 110);
-    const lines = doc.splitTextToSize(
-      `Arithmetic check - Sum BS: ${raw(checks.sumBs)} ft   Sum FS: ${raw(checks.sumFs)} ft   Elev(last)-Elev(first): ${raw(checks.elevDiff)} ft`,
-      w
-    );
-    doc.text(lines, x, ny);
-    return ny + lines.length * 8;
+    return ny;
   }
 
   // Page 1 - Top View, given the whole page to itself so it can be zoomed in

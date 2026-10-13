@@ -90,7 +90,7 @@ const MapView = (() => {
     legendControl = L.control({ position: "bottomright" });
     legendControl.onAdd = () => {
       const div = L.DomUtil.create("div", "map-legend");
-      const tripodRow = `<div class="lg-item"><span class="lg-swatch" style="background:#2c333b;border-radius:3px;"></span>Tripod Setup</div>`;
+      const tripodRow = `<div class="lg-item"><span class="lg-swatch" style="background:#2c333b;border-radius:3px;"></span>Instrument Setup</div>`;
       div.innerHTML = `<h4>Legend</h4>${featureLegendRows()}${tripodRow}<hr style="margin:5px 0;border-color:#eee"/>${connectionLegendRows()}`;
       return div;
     };
@@ -194,7 +194,7 @@ const MapView = (() => {
       <div class="pop-row"><strong>Elevation:</strong> ${elev}</div>
       <div class="pop-row"><strong>Description:</strong> ${point.description || "<em>none</em>"}</div>
       <div class="pop-row"><strong>N/E:</strong> ${point.northing.toFixed(2)}, ${point.easting.toFixed(2)}</div>
-      <button data-edit-id="${point.id}">Edit Point</button>
+      <button data-edit-id="${point.id}">Edit Rod</button>
     `;
   }
 
@@ -211,9 +211,9 @@ const MapView = (() => {
 
   function tripodPopupHtml(tripod) {
     return `
-      <div class="pop-title">${tripod.id} &mdash; Tripod Setup</div>
+      <div class="pop-title">${tripod.id} &mdash; Instrument Setup</div>
       <div class="pop-row"><strong>N/E:</strong> ${tripod.northing.toFixed(2)}, ${tripod.easting.toFixed(2)}</div>
-      <button data-delete-tripod-id="${tripod.id}">Delete Tripod</button>
+      <button data-delete-tripod-id="${tripod.id}">Delete Instrument</button>
     `;
   }
 
@@ -286,11 +286,11 @@ const MapView = (() => {
       }
 
       if (conn.type === "traverse") {
-        // A traverse station sights straight point-to-point, no tripod -
+        // A traverse station sights through its own assigned instrument -
         // see computeStationSightingSegments.
         const stationSegments = Traverse.computeStationSightingSegments(conn);
         drawSightingSegments(stationSegments, style, {
-          chain: "Click to record this point's line to the next one",
+          chain: "Click to record this rod's line to the next one",
           spur: "",
         });
         // A small compass at each station, needle pointing along that

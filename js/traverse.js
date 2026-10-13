@@ -128,12 +128,22 @@ const Traverse = (() => {
   }
 
   // The sighting line a traverse station actually makes to the NEXT station
-  // - straight point to point, no tripod. (The "backsight" to the previous
-  // point is just that same previous point's own outgoing line, sighted in
-  // reverse - it doesn't need a second segment here.) Returns { from, to,
-  // pointId, isSpur } segments - isSpur is always false, since these ARE the
-  // chain a traverse actually runs along (see computeSideShotSegments for
-  // the non-continuing kind). Mirrors Leveling.computeAnchorSegments.
+  // - routed through whichever instrument was centered over each end
+  // (point.instrumentId), the same real procedure as Leveling: the
+  // instrument sits over the current rod, backsighting the previous one and
+  // foresighting the next. (The "backsight" to the previous rod is just
+  // that same previous rod's own outgoing line, sighted in reverse - it
+  // doesn't need a second segment here.) Without an instrument placed for a
+  // given station yet, falls back to the rod's own location as an
+  // approximation, so this still works before any instrument exists.
+  // Returns { from, to, pointId, isSpur } segments - isSpur is always
+  // false, since these ARE the chain a traverse actually runs along (see
+  // computeSideShotSegments for the non-continuing kind). Mirrors
+  // Leveling.computeAnchorSegments.
+  function instrumentPos(pt) {
+    return (pt.instrumentId && State.getTripod(pt.instrumentId)) || pt;
+  }
+
   function computeStationSightingSegments(conn) {
     const closed = conn.surveyType === "closed";
     const stations = conn.pointIds;
@@ -144,7 +154,7 @@ const Traverse = (() => {
       const { next } = neighborsFor(stations, i, closed);
       if (next) {
         const nextPt = State.getPoint(next);
-        if (nextPt) segments.push({ from: pt, to: nextPt, pointId: pt.id, isSpur: false });
+        if (nextPt) segments.push({ from: instrumentPos(pt), to: instrumentPos(nextPt), pointId: pt.id, isSpur: false });
       }
     }
     return segments;
@@ -204,12 +214,12 @@ const Traverse = (() => {
         toId: to ? to.id : null,
         hasOutgoing,
         // The Interior Angle is the turn from the incoming line's azimuth
-        // (established back at `prev`, when IT recorded its own forward
-        // reading) into this point's own outgoing azimuth - both of those
-        // are already known the moment `prev` exists, without needing
-        // `next` to exist at all (unlike the old tripod-era model, which
-        // needed both a real backsight AND foresight setup).
-        hasAngle: !!prev,
+        // (established back at `prev`) into this point's own outgoing
+        // azimuth - it needs both a backsight (`prev`) AND something to
+        // turn forward into (`hasOutgoing`), so a true open-run dead end
+        // (no rod ever placed ahead of it) never gets one, even though it
+        // still has a backsight to show on the map.
+        hasAngle: !!prev && hasOutgoing,
         actualDistance,
         actualAzimuth,
         actualBearing,
@@ -272,9 +282,9 @@ const Traverse = (() => {
     const referenceHtml = (() => {
       if (!conn.pointIds.length) return "";
       if (!data.closed) return `<p class="hint-text">Open traverse &mdash; no angular closure check applies. Compare your Adjusted values to the Actual (map) columns yourself.</p>`;
-      if (data.n < 3) return `<p class="hint-text">Need at least 3 points for a closed-loop angle check.</p>`;
+      if (data.n < 3) return `<p class="hint-text">Need at least 3 rods for a closed-loop angle check.</p>`;
       const theoretical = (data.n - 2) * 180;
-      return `<p class="hint-text">Closed traverse, ${data.n} points. Reference: interior angles of a closed polygon sum to (n&minus;2)&times;180&deg; = <strong>${theoretical}&deg;</strong>. This reference assumes interior angles - convert first if you're using a different angle type.</p>`;
+      return `<p class="hint-text">Closed traverse, ${data.n} rods. Reference: interior angles of a closed polygon sum to (n&minus;2)&times;180&deg; = <strong>${theoretical}&deg;</strong>. This reference assumes interior angles - convert first if you're using a different angle type.</p>`;
     })();
 
     const rowsHtml = data.rows
@@ -300,15 +310,15 @@ const Traverse = (() => {
       .join("");
 
     return `
-      <h4>Point Data &mdash; Distance, Angle &amp; Bearing</h4>
-      <p class="hint-text">Each column here is this point's own OUTGOING line (Bearing/Azimuth/Distance/Field Angle, to the next point) - but you record it in two pieces: Bearing/Azimuth is a forward reading taken right here, while Distance and the Interior Angle only become knowable once you've reached the NEXT point and can look back - see that point's own form. This row picks both up automatically once they're entered.</p>
+      <h4>Rod Data &mdash; Distance, Angle &amp; Bearing</h4>
+      <p class="hint-text">Each column here is this rod's own OUTGOING line (Bearing/Azimuth/Distance/Field Angle, to the next rod) - but you record it in two pieces: Bearing/Azimuth is a forward reading taken right here, while Distance and the Interior Angle only become knowable once you've reached the NEXT rod and can look back - see that rod's own form. This row picks both up automatically once they're entered.</p>
       ${referenceHtml}
       <table class="adjust-table">
         <thead>
           <tr>
-            <th rowspan="2">Point</th>
+            <th rowspan="2">Rod</th>
             <th colspan="3">Angle (your work)</th>
-            <th colspan="3">This Point's Line (to the next point)</th>
+            <th colspan="3">This Rod's Line (to the next rod)</th>
             <th colspan="2">Adjusted</th>
             <th colspan="3">Actual (map)</th>
           </tr>
@@ -325,7 +335,7 @@ const Traverse = (() => {
         <strong>Your Angular Closure Check</strong>
         &Sigma; Field Angles: ${checkInput(conn.id, "sumAngles", checks.sumAngles, "deg")}&deg; &nbsp;
         Angular Misclosure: ${checkInput(conn.id, "angularMisclosure", checks.angularMisclosure, "&plusmn;")}&deg; &nbsp;
-        Correction / Point: ${checkInput(conn.id, "correctionPerStation", checks.correctionPerStation, "&plusmn;")}&deg;
+        Correction / Rod: ${checkInput(conn.id, "correctionPerStation", checks.correctionPerStation, "&plusmn;")}&deg;
       </div>
     `;
   }
@@ -389,7 +399,7 @@ const Traverse = (() => {
       </table>
       <table class="adjust-table">
         <thead>
-          <tr><th>Point</th><th>Adj. Northing</th><th>Adj. Easting</th><th>Actual Northing (map)</th><th>Actual Easting (map)</th></tr>
+          <tr><th>Rod</th><th>Adj. Northing</th><th>Adj. Easting</th><th>Actual Northing (map)</th><th>Actual Easting (map)</th></tr>
         </thead>
         <tbody>${coordRows}</tbody>
       </table>
@@ -433,10 +443,10 @@ const Traverse = (() => {
       )
       .join("");
     return `
-      <h4>Side Shots <span class="hint-text">(detail points - not part of the traverse chain)</span></h4>
+      <h4>Side Shots <span class="hint-text">(detail rods - not part of the traverse chain)</span></h4>
       <table class="adjust-table">
         <thead>
-          <tr><th>Point</th><th>Sighted From</th><th>Angle</th><th>Bearing</th><th>Azimuth</th><th>Dist. (Taped)</th><th>Stadia Top</th><th>Stadia Bottom</th><th>Description</th></tr>
+          <tr><th>Rod</th><th>Sighted From</th><th>Angle</th><th>Bearing</th><th>Azimuth</th><th>Dist. (Taped)</th><th>Stadia Top</th><th>Stadia Bottom</th><th>Description</th></tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
@@ -448,7 +458,7 @@ const Traverse = (() => {
     return `
       <div class="survey-block" data-conn-id="${conn.id}">
         <div class="survey-block-header">
-          <h3>${conn.name} <span class="hint-text">(${data.n} point${data.n === 1 ? "" : "s"}, ${data.closed ? "closed" : "open"})</span></h3>
+          <h3>${conn.name} <span class="hint-text">(${data.n} rod${data.n === 1 ? "" : "s"}, ${data.closed ? "closed" : "open"})</span></h3>
           <div class="survey-block-actions">
             <label class="inline-label">Angle Type
               <select data-conn-meta="${conn.id}" data-field="angleType">
@@ -469,10 +479,10 @@ const Traverse = (() => {
     const container = document.getElementById("traverseContainer");
     const conns = project.connections.filter((c) => c.type === "traverse");
     if (!conns.length) {
-      container.innerHTML = `<p class="empty-hint">No traverse yet. Set the project's <strong>Type of Survey</strong> (header) to Traverse - Open or Closed, then add at least 2 points - this table builds itself automatically as you add them.</p>`;
+      container.innerHTML = `<p class="empty-hint">No traverse yet. Set the project's <strong>Type of Survey</strong> (header) to Traverse - Open or Closed, then add at least 2 rods - this table builds itself automatically as you add them.</p>`;
       return;
     }
-    const intro = `<p class="hint-text convention-note">Enter your own field readings and hand-worked correction/adjusted/latitude-departure values. Pick the <strong>Angle Type</strong> your course uses so the column headers match. The app only fills in the Actual (map) columns and known point coordinates, so you can check your work against ground truth - it never computes the adjustment for you.</p>`;
+    const intro = `<p class="hint-text convention-note">Enter your own field readings and hand-worked correction/adjusted/latitude-departure values. Assign each rod's <strong>Instrument Setup</strong> in its own form (the instrument centered over it backsights the previous rod and foresights the next, same setup for both) - the map's sighting lines route through it once placed. Pick the <strong>Angle Type</strong> your course uses so the column headers match. The app only fills in the Actual (map) columns and known rod coordinates, so you can check your work against ground truth - it never computes the adjustment for you.</p>`;
     container.innerHTML = intro + conns.map(renderConnectionBlock).join("");
   }
 

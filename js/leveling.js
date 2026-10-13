@@ -54,9 +54,13 @@ const Leveling = (() => {
     return `<input type="${type}" ${attrs} data-conn="${connId}" data-point="${pointId}" data-field="${field}" value="${escapeAttr(v)}" placeholder="${placeholder}" />`;
   }
 
+  // Number, not text (unlike Traverse's own closure checks, which include
+  // free-text ratios like "1:8500") - every leveling arithmetic-check value
+  // is a plain ft measurement, held to the same 2-decimal precision as the
+  // table's other fields.
   function checkInput(connId, field, value, placeholder = "") {
     const v = value === null || value === undefined ? "" : value;
-    return `<input type="text" class="check-input" data-conn-check="${connId}" data-field="${field}" value="${escapeAttr(v)}" placeholder="${placeholder}" />`;
+    return `<input type="number" step="0.01" class="check-input" data-conn-check="${connId}" data-field="${field}" value="${escapeAttr(v)}" placeholder="${placeholder}" />`;
   }
 
   function computeRows(conn) {
@@ -77,8 +81,8 @@ const Leveling = (() => {
       const fd = Object.assign(
         {
           bs: pt.bs, hi: pt.hi, fs: pt.fs,
-          bsStadiaTop: pt.bsStadiaTop, bsStadiaBottom: pt.bsStadiaBottom, bsDistTaped: pt.bsDistTaped,
-          fsStadiaTop: pt.fsStadiaTop, fsStadiaBottom: pt.fsStadiaBottom, fsDistTaped: pt.fsDistTaped,
+          bsStadiaTop: pt.bsStadiaTop, bsStadiaBottom: pt.bsStadiaBottom, bsDistTaped: pt.bsDistTaped, bsDistPacing: pt.bsDistPacing,
+          fsStadiaTop: pt.fsStadiaTop, fsStadiaBottom: pt.fsStadiaBottom, fsDistTaped: pt.fsDistTaped, fsDistPacing: pt.fsDistPacing,
         },
         fieldData[pt.id] || {}
       );
@@ -172,15 +176,17 @@ const Leveling = (() => {
           fieldInput(conn.id, r.pointId, "fsStadiaTop", r.fd.fsStadiaTop, "top"),
           fieldInput(conn.id, r.pointId, "fsStadiaBottom", r.fd.fsStadiaBottom, "bot"),
           fieldInput(conn.id, r.pointId, "fsDistTaped", r.fd.fsDistTaped, "dist"),
+          fieldInput(conn.id, r.pointId, "fsDistPacing", r.fd.fsDistPacing, "dist"),
         ]
-      : ["&mdash;", "&mdash;", "&mdash;"];
+      : ["&mdash;", "&mdash;", "&mdash;", "&mdash;"];
     const bsDist = r.hasBsShot
       ? [
           fieldInput(conn.id, r.pointId, "bsStadiaTop", r.fd.bsStadiaTop, "top"),
           fieldInput(conn.id, r.pointId, "bsStadiaBottom", r.fd.bsStadiaBottom, "bot"),
           fieldInput(conn.id, r.pointId, "bsDistTaped", r.fd.bsDistTaped, "dist"),
+          fieldInput(conn.id, r.pointId, "bsDistPacing", r.fd.bsDistPacing, "dist"),
         ]
-      : ["&mdash;", "&mdash;", "&mdash;"];
+      : ["&mdash;", "&mdash;", "&mdash;", "&mdash;"];
     const startLabel = r.isFirst ? (r.hasFsShot ? " <span class=\"hint-text\">(start / close)</span>" : " <span class=\"hint-text\">(start)</span>") : "";
     const closeLabel = r.isLast && !r.isFirst ? ` <span class="hint-text">(${r.isClosingSetup ? "final setup" : "close"})</span>` : "";
     return `
@@ -190,8 +196,8 @@ const Leveling = (() => {
         <td>${hiCell}</td>
         <td>${fsCell}</td>
         <td>${fieldInput(conn.id, r.pointId, "elevation", r.fd.elevation, "elev")}</td>
-        <td>${fsDist[0]}</td><td>${fsDist[1]}</td><td>${fsDist[2]}</td>
-        <td>${bsDist[0]}</td><td>${bsDist[1]}</td><td>${bsDist[2]}</td>
+        <td>${fsDist[0]}</td><td>${fsDist[1]}</td><td>${fsDist[2]}</td><td>${fsDist[3]}</td>
+        <td>${bsDist[0]}</td><td>${bsDist[1]}</td><td>${bsDist[2]}</td><td>${bsDist[3]}</td>
       </tr>
     `;
   }
@@ -204,8 +210,8 @@ const Leveling = (() => {
     const benchmarkRow = data.rows[0];
     const checks = conn.checks || {};
     const referenceHtml = (() => {
-      if (!data.closed) return `<p class="hint-text">Open level run &mdash; no closure reference. Compare your final computed Elevation to the point's own known elevation yourself.</p>`;
-      if (!benchmarkRow || benchmarkRow.actualElev === null) return `<p class="hint-text">The benchmark needs a known elevation entered (on the point itself) before you can check closure against it.</p>`;
+      if (!data.closed) return `<p class="hint-text">Open level run &mdash; no closure reference. Compare your final computed Elevation to the rod's own known elevation yourself.</p>`;
+      if (!benchmarkRow || benchmarkRow.actualElev === null) return `<p class="hint-text">The benchmark needs a known elevation entered (on the rod itself) before you can check closure against it.</p>`;
       return `<p class="hint-text">Closed level run. Reference: the benchmark's known elevation is <strong>${fmt(benchmarkRow.actualElev)} ft</strong> - the loop closes back onto it, so fill in the benchmark's own Foresight (its row above) once you've walked the whole loop. Work out your own misclosure and distance-proportional correction, then compare your final Elevation to this value.</p>`;
     })();
 
@@ -218,28 +224,31 @@ const Leveling = (() => {
         <table class="adjust-table">
           <thead>
             <tr>
-              <th rowspan="2">PT</th>
+              <th rowspan="2">ROD</th>
               <th rowspan="2">BS</th>
               <th rowspan="2">HI</th>
               <th rowspan="2">FS</th>
               <th rowspan="2">ELEV.</th>
-              <th colspan="3">Foresight Shot (sighting this point)</th>
-              <th colspan="3">Backsight Shot (starting a new setup here)</th>
+              <th colspan="4">Foresight Shot (sighting this rod)</th>
+              <th colspan="4">Backsight Shot (starting a new setup here)</th>
             </tr>
             <tr>
-              <th>Top Stadia</th><th>Bottom Stadia</th><th>DIST.</th>
-              <th>Top Stadia</th><th>Bottom Stadia</th><th>DIST.</th>
+              <th>Top Stadia</th><th>Bottom Stadia</th><th>DIST. (Taped)</th><th>DIST. (Pacing)</th>
+              <th>Top Stadia</th><th>Bottom Stadia</th><th>DIST. (Taped)</th><th>DIST. (Pacing)</th>
             </tr>
           </thead>
           <tbody>${data.rows.map((r) => rowHtml(conn, r)).join("")}</tbody>
+          <tfoot>
+            <tr class="check-row">
+              <td><strong>Your Arithmetic Check</strong></td>
+              <td><span class="check-label">&Sigma; BS (ft)</span>${checkInput(conn.id, "sumBs", checks.sumBs, "ft")}</td>
+              <td>&mdash;</td>
+              <td><span class="check-label">&Sigma; FS (ft)</span>${checkInput(conn.id, "sumFs", checks.sumFs, "ft")}</td>
+              <td><span class="check-label">Elev(last) &minus; Elev(first) (ft)</span>${checkInput(conn.id, "elevDiff", checks.elevDiff, "ft")}</td>
+              <td colspan="8" class="hint-text check-note">&Sigma;BS &minus; &Sigma;FS should equal Elev(last) &minus; Elev(first). Do this check on your own numbers before comparing anything to a known elevation.</td>
+            </tr>
+          </tfoot>
         </table>
-        <div class="closure-check">
-          <strong>Your Arithmetic Check</strong>
-          &Sigma; BS: ${checkInput(conn.id, "sumBs", checks.sumBs, "ft")} ft &nbsp;
-          &Sigma; FS: ${checkInput(conn.id, "sumFs", checks.sumFs, "ft")} ft &nbsp;
-          Elev(last) &minus; Elev(first): ${checkInput(conn.id, "elevDiff", checks.elevDiff, "ft")} ft
-          <p class="hint-text">These two should match: &Sigma;BS &minus; &Sigma;FS = Elev(last) &minus; Elev(first). Do this check on your own numbers before comparing anything to a known elevation.</p>
-        </div>
         ${referenceHtml}
       </div>
     `;
@@ -249,11 +258,18 @@ const Leveling = (() => {
     const container = document.getElementById("levelingContainer");
     const conns = project.connections.filter((c) => c.type === "level");
     if (!conns.length) {
-      container.innerHTML = `<p class="empty-hint">No leveling run yet. Set the project's <strong>Type of Survey</strong> (header) to Differential Leveling - Points or Loop, then add at least 2 points - this table builds itself automatically as you add them.</p>`;
+      container.innerHTML = `<p class="empty-hint">No leveling run yet. Set the project's <strong>Type of Survey</strong> (header) to Differential Leveling - Rods or Loop, then add at least 2 rods - this table builds itself automatically as you add them.</p>`;
       return;
     }
-    const intro = `<p class="hint-text convention-note">Enter your own BS/HI/FS/Elevation and stadia readings (rounded to the nearest hundredth). With one rod and one instrument, a turning point is sighted from two different setups - the incoming Foresight Shot and, once the instrument moves and the rod stays put, the outgoing Backsight Shot for the next setup - so each gets its own Top/Bottom Stadia and Distance. A point's Turning Point role is set in its own point-form. For a closed run, the loop closes back onto the benchmark itself - no separate closing point needed - so once you've walked the whole loop, come back and fill in the benchmark's own Foresight Shot. Do your arithmetic check (&Sigma;BS &minus; &Sigma;FS) below before comparing your Elevation column to the closure reference.</p>`;
+    const intro = `<p class="hint-text convention-note">Enter your own BS/HI/FS/Elevation, stadia, taped, and pacing readings (rounded to the nearest hundredth). With one rod and one instrument, a turning rod is sighted from two different setups - the incoming Foresight Shot and, once the instrument moves and the rod stays put, the outgoing Backsight Shot for the next setup - so each gets its own Top/Bottom Stadia, Taped Distance, and Pacing Distance. A rod's Turning Rod role is set in its own rod-form. For a closed run, the loop closes back onto the benchmark itself - no separate closing rod needed - so once you've walked the whole loop, come back and fill in the benchmark's own Foresight Shot. Do your arithmetic check (&Sigma;BS &minus; &Sigma;FS) in the table's last row before comparing your Elevation column to the closure reference.</p>`;
     container.innerHTML = intro + conns.map(renderConnectionBlock).join("");
+  }
+
+  // Rounded to 2 decimals on commit - every field in this table (and the
+  // arithmetic check below it) is a real ft measurement, held to the
+  // nearest hundredth.
+  function round2(v) {
+    return v === null || v === undefined || Number.isNaN(v) ? null : Math.round(v * 100) / 100;
   }
 
   function init() {
@@ -261,13 +277,16 @@ const Leveling = (() => {
     container.addEventListener("change", (e) => {
       const input = e.target.closest("input[data-conn][data-point]");
       if (input) {
-        const value = input.value === "" ? null : parseFloat(input.value);
+        const value = round2(input.value === "" ? null : parseFloat(input.value));
+        input.value = value === null ? "" : value;
         State.updateFieldData(input.dataset.conn, input.dataset.point, { [input.dataset.field]: value });
         return;
       }
       const checkEl = e.target.closest("input[data-conn-check]");
       if (checkEl) {
-        State.updateConnectionChecks(checkEl.dataset.connCheck, { [checkEl.dataset.field]: checkEl.value === "" ? null : checkEl.value });
+        const value = round2(checkEl.value === "" ? null : parseFloat(checkEl.value));
+        checkEl.value = value === null ? "" : value;
+        State.updateConnectionChecks(checkEl.dataset.connCheck, { [checkEl.dataset.field]: value });
         return;
       }
       const metaSel = e.target.closest("select[data-conn-meta]");

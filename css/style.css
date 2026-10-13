@@ -98,6 +98,8 @@ button, input, select, textarea {
   border-right: 1px solid var(--line-soft);
 }
 .tool-group:last-child { border-right: none; }
+#connectToolGroup { display: inline-flex; gap: 8px; align-items: center; }
+#connectToolGroup.hidden { display: none; }
 
 .tool-btn {
   display: inline-flex;
@@ -291,6 +293,9 @@ button, input, select, textarea {
 .adjust-table input[type="checkbox"] { width: auto; }
 .adjust-table input.wide-input { width: 100px; }
 .adjust-table tr.tp-row td { background: #fbf3e6; }
+.adjust-table tfoot td { background: var(--surface-sunken); vertical-align: bottom; }
+.adjust-table .check-label { display: block; font-size: 10.5px; color: var(--ink-soft); margin-bottom: 2px; white-space: normal; }
+.adjust-table .check-note { white-space: normal; text-align: left; margin: 0; line-height: 1.4; }
 
 .survey-block h4 { margin: 10px 0 4px; font-size: 13px; color: var(--ink); }
 .closure-check {
