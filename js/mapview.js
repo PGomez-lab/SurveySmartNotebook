@@ -25,15 +25,35 @@ const MapView = (() => {
   }
 
   function init(project) {
-    map = L.map("map", { zoomControl: true }).setView(
+    map = L.map("map", { zoomControl: true, maxZoom: 21 }).setView(
       [project.meta.originLat, project.meta.originLng],
       18
     );
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 21,
-      attribution: "&copy; OpenStreetMap contributors",
-    }).addTo(map);
+    // NYC's own open GIS basemap (DoITT, maps.nyc.gov) - the same public
+    // tile service NYC Planning's own ZoLa runs on. Free, no API key
+    // (unlike Google Maps, which always needs a billing-enabled one), and
+    // actually meant for a whole classroom sharing one school IP, unlike
+    // OSM's own tile server (blocks/403s that) or a third-party CDN (can
+    // start asking for a key once usage grows). Cached tiles only go to
+    // z19 natively; maxNativeZoom lets Leaflet keep zooming past that by
+    // upscaling the z19 tile instead of requesting a z20/21 tile that
+    // doesn't exist.
+    const tileOpts = { subdomains: "1234", minZoom: 8, maxZoom: 21, maxNativeZoom: 19 };
+    const nycAttribution = '&copy; <a href="https://www1.nyc.gov/site/doitt/initiatives/gis.page">City of New York</a>';
+    const nycBasemap = L.tileLayer("https://maps{s}.nyc.gov/xyz/1.0.0/carto/basemap/{z}/{x}/{y}.jpg", Object.assign({ attribution: nycAttribution }, tileOpts));
+    const nycAerial = L.tileLayer("https://maps{s}.nyc.gov/xyz/1.0.0/photo/2018/{z}/{x}/{y}.png8", Object.assign({ attribution: nycAttribution + " (2018 aerial)" }, tileOpts));
+    const nycLabels = L.tileLayer("https://maps{s}.nyc.gov/xyz/1.0.0/carto/label/{z}/{x}/{y}.png8", tileOpts);
+
+    nycBasemap.addTo(map);
+    nycLabels.addTo(map);
+    // Same idea as ZoLa's own layer switcher: Basemap/Aerial Photo are
+    // mutually exclusive (Leaflet's base-layer radio behavior), Labels is an
+    // independent overlay since the aerial photo has no text of its own.
+    L.control.layers(
+      { "Basemap": nycBasemap, "Aerial Photo (2018)": nycAerial },
+      { "Labels": nycLabels }
+    ).addTo(map);
 
     L.control.scale({ metric: false, imperial: true, position: "bottomleft" }).addTo(map);
 

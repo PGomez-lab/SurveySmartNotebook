@@ -8,9 +8,14 @@
  * Plane coordinate grid is drawn by converting round Northing/Easting values
  * to lat/lng (Coords.inverse) and through that same transform.
  *
- * OSM's standard tile server sends Access-Control-Allow-Origin: *, so tiles
- * can be drawn onto the canvas (with crossOrigin="anonymous") without
- * tainting it - toDataURL() still works for the PDF export.
+ * Tiles come from NYC's own open GIS basemap (DoITT, maps.nyc.gov) - the
+ * same free, keyless tile service NYC Planning's own ZoLa runs on, and
+ * actually meant for a whole classroom sharing one school IP (unlike OSM's
+ * own tile server, which blocks/403s that). Basemap and Labels are drawn as
+ * two stacked tile layers, matching the live map's default. It sends
+ * Access-Control-Allow-Origin: *, so tiles can still be drawn onto the
+ * canvas (with crossOrigin="anonymous") without tainting it - toDataURL()
+ * still works for the PDF export.
  *
  * render(canvas, project) is async (tile fetching) and never rejects - a
  * tile that fails to load (offline, blocked, timeout) is just skipped,
@@ -39,8 +44,11 @@ const PlanView = (() => {
     return ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * TILE_SIZE * Math.pow(2, zoom);
   }
 
+  // Capped at 19 - NYC's basemap/label tiles (see loadTileImage) are only
+  // cached natively up to that zoom, unlike OSM's own server which this
+  // used to pull from directly.
   function pickZoom(latMin, latMax, lonMin, lonMax, targetW, targetH) {
-    for (let z = 21; z >= 3; z--) {
+    for (let z = 19; z >= 3; z--) {
       const w = lonToWorldX(lonMax, z) - lonToWorldX(lonMin, z);
       const h = latToWorldY(latMin, z) - latToWorldY(latMax, z);
       if (w <= targetW && h <= targetH) return z;
@@ -57,10 +65,16 @@ const PlanView = (() => {
   // on the next render rather than being stuck blank for the rest of the session.
   const tileCache = new Map();
 
-  function loadTileImage(z, x, y) {
+  // Same 1/2/3/4 subdomain spread mapview.js's L.tileLayer uses - just
+  // picked by hand here since this is a plain Image(), not a Leaflet layer.
+  const NYC_SUBDOMAINS = "1234";
+  // layer: "carto/basemap" (cartographic streets/buildings/parks) or
+  // "carto/label" (text labels, drawn on top of it) - mirrors mapview.js's
+  // two stacked NYC tile layers.
+  function loadTileImage(layer, ext, z, x, y) {
     const maxTile = Math.pow(2, z);
     if (x < 0 || y < 0 || x >= maxTile || y >= maxTile) return Promise.resolve(null);
-    const key = `${z}/${x}/${y}`;
+    const key = `${layer}/${z}/${x}/${y}`;
     if (tileCache.has(key)) return Promise.resolve(tileCache.get(key));
     return new Promise((resolve) => {
       let done = false;
@@ -70,11 +84,12 @@ const PlanView = (() => {
         if (result) tileCache.set(key, result);
         resolve(result);
       };
+      const sub = NYC_SUBDOMAINS[(x + y) % NYC_SUBDOMAINS.length];
       const img = new Image();
       img.crossOrigin = "anonymous";
       img.onload = () => finish(img);
       img.onerror = () => finish(null);
-      img.src = `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+      img.src = `https://maps${sub}.nyc.gov/xyz/1.0.0/${layer}/${z}/${x}/${y}.${ext}`;
       setTimeout(() => finish(null), TILE_TIMEOUT_MS);
     });
   }
@@ -247,8 +262,16 @@ const PlanView = (() => {
     ctx.clip();
 
     if (tileJobs.length <= MAX_TILES) {
-      const images = await Promise.all(tileJobs.map((j) => loadTileImage(zoom, j.tx, j.ty)));
-      images.forEach((img, i) => {
+      // Basemap first, then Labels drawn on top of it - same stacking the
+      // live map uses by default.
+      const basemapImages = await Promise.all(tileJobs.map((j) => loadTileImage("carto/basemap", "jpg", zoom, j.tx, j.ty)));
+      basemapImages.forEach((img, i) => {
+        if (!img) return;
+        const { tx, ty } = tileJobs[i];
+        ctx.drawImage(img, offsetX + tx * TILE_SIZE, offsetY + ty * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+      });
+      const labelImages = await Promise.all(tileJobs.map((j) => loadTileImage("carto/label", "png8", zoom, j.tx, j.ty)));
+      labelImages.forEach((img, i) => {
         if (!img) return;
         const { tx, ty } = tileJobs[i];
         ctx.drawImage(img, offsetX + tx * TILE_SIZE, offsetY + ty * TILE_SIZE, TILE_SIZE, TILE_SIZE);
