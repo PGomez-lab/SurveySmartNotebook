@@ -92,6 +92,7 @@ button, input, select, textarea {
 }
 .tool-group {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   padding-right: 14px;
