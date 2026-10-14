@@ -479,6 +479,7 @@ textarea { resize: vertical; }
 
 @media (max-width: 900px) {
   .workspace { flex-direction: column; height: auto; }
-  .map-pane { height: 60vh; border-right: none; border-bottom: 1px solid var(--line); }
-  .notebook-pane { min-height: 60vh; }
+  .map-pane { flex: none; height: 60vh; border-right: none; border-bottom: 1px solid var(--line); }
+  .notebook-pane { min-height: 60vh; min-width: 0; }
+  .workspace.data-focus .map-pane { flex: none; height: 260px; min-width: 0; }
 }
