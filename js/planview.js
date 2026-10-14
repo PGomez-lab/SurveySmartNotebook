@@ -146,7 +146,7 @@ const PlanView = (() => {
         ctx.stroke();
         break;
       }
-      case "triangleOutline": // Turning Rod
+      case "triangleOutline": // Turning Point
         ctx.lineWidth = 2;
         ctx.moveTo(x, y - r * 1.2);
         ctx.lineTo(x + r, y + r * 0.8);
@@ -177,7 +177,7 @@ const PlanView = (() => {
     "Building Corner": "squareOutline",
     "Utility Feature": "triangleDown",
     "Benchmark": "hexagon",
-    "Turning Rod": "triangleOutline",
+    "Turning Point": "triangleOutline",
     "Branch": "plus",
     "Other": "ringOutline",
   };

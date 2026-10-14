@@ -14,7 +14,7 @@ const State = (() => {
     "Building Corner": { color: "#a5342a", code: "BC" },
     "Utility Feature": { color: "#6a3fa0", code: "UF" },
     "Benchmark": { color: "#7a4419", code: "BM" },
-    "Turning Rod": { color: "#5a6672", code: "TP" },
+    "Turning Point": { color: "#5a6672", code: "TP" },
     // A rod with only a foresight reading - a side/spur reading off the
     // current instrument setup, never a turning rod itself (no backsight, no
     // new setup starts here). Differential Leveling already treats any
