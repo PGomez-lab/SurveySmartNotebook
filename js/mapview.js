@@ -31,29 +31,31 @@ const MapView = (() => {
     );
 
     // Bundled locally under tiles/ (see scripts/download-tiles.js) rather
-    // than fetched live from maps.nyc.gov - this app has now hit a live
-    // tile-server block/rate-limit/redirect from three different providers
-    // (OSM, CARTO, NYC's own), on multiple networks and devices, so the
-    // only fix that's actually durable is not depending on a live map
-    // server at all. Covers Fort Greene Park (plus panning margin) at
+    // than fetched live from a map-tile server - three different live
+    // providers (OSM, then CARTO, then NYC's own DOITT service) each turned
+    // out blocked, key-gated, or quietly deprecated (CARTO/NYC still
+    // returned HTTP 200, just with a placeholder image baked in instead of
+    // a real tile - caught only by actually looking at the picture, not the
+    // status code). Esri's public tiles, verified the same way, are what's
+    // actually bundled. Covers Fort Greene Park (plus panning margin) at
     // z15-19 - the area/zoom range this project is actually scoped to (see
     // README). maxNativeZoom lets Leaflet keep zooming past the bundled
     // z19 by upscaling that tile instead of requesting a z20/21 one that
     // was never downloaded.
     const tileOpts = { minZoom: 15, maxZoom: 21, maxNativeZoom: 19 };
-    const nycAttribution = '&copy; <a href="https://www1.nyc.gov/site/doitt/initiatives/gis.page">City of New York</a>';
-    const nycBasemap = L.tileLayer("tiles/carto-basemap/{z}/{x}/{y}.jpg", Object.assign({ attribution: nycAttribution }, tileOpts));
-    const nycAerial = L.tileLayer("tiles/photo-2018/{z}/{x}/{y}.png", Object.assign({ attribution: nycAttribution + " (2018 aerial)" }, tileOpts));
-    const nycLabels = L.tileLayer("tiles/carto-label/{z}/{x}/{y}.png", tileOpts);
+    const esriAttribution = '&copy; <a href="https://www.esri.com">Esri</a>';
+    const esriStreet = L.tileLayer("tiles/street/{z}/{x}/{y}.jpg", Object.assign({ attribution: esriAttribution }, tileOpts));
+    const esriImagery = L.tileLayer("tiles/imagery/{z}/{x}/{y}.jpg", Object.assign({ attribution: esriAttribution + " (aerial)" }, tileOpts));
+    const esriLabels = L.tileLayer("tiles/labels/{z}/{x}/{y}.png", tileOpts);
 
-    nycBasemap.addTo(map);
-    nycLabels.addTo(map);
+    esriStreet.addTo(map);
+    esriLabels.addTo(map);
     // Same idea as ZoLa's own layer switcher: Basemap/Aerial Photo are
     // mutually exclusive (Leaflet's base-layer radio behavior), Labels is an
     // independent overlay since the aerial photo has no text of its own.
     L.control.layers(
-      { "Basemap": nycBasemap, "Aerial Photo (2018)": nycAerial },
-      { "Labels": nycLabels }
+      { "Basemap": esriStreet, "Aerial Photo": esriImagery },
+      { "Labels": esriLabels }
     ).addTo(map);
 
     L.control.scale({ metric: false, imperial: true, position: "bottomleft" }).addTo(map);

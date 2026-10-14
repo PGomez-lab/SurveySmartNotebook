@@ -1,9 +1,22 @@
 /* download-tiles.js
- * One-time script: downloads the Fort Greene Park tile set (basemap,
- * labels, aerial) from NYC's live DOITT tile service into tiles/, so the
- * app can run with zero live map-tile dependency. Not part of the app
- * itself - run with `node scripts/download-tiles.js` whenever the bundled
- * area/zoom range needs to change.
+ * One-time script: downloads the Fort Greene Park tile set (street basemap,
+ * labels, aerial imagery) from Esri's free public ArcGIS Online tile
+ * services into tiles/, so the app can run with zero live map-tile
+ * dependency. Not part of the app itself - run with
+ * `node scripts/download-tiles.js` whenever the bundled area/zoom range
+ * needs to change.
+ *
+ * NYC's own DOITT tile service (maps.nyc.gov/xyz/1.0.0/...) and CARTO's
+ * free basemap CDN were tried first - both now serve a placeholder image
+ * (HTTP 200, but the picture itself just says "service has moved" / "API
+ * key required") instead of real tiles or an actual error, so a status-code
+ * check alone doesn't catch it. Esri's tiles were verified by actually
+ * looking at the downloaded images, not just the HTTP status.
+ *
+ * Esri's tile path is {z}/{y}/{x} - row before column - the opposite order
+ * from the {z}/{x}/{y} convention every other provider this app has used
+ * follows. Easy to get backwards; double-checked against a known street
+ * (Willoughby Ave) before trusting it.
  */
 const fs = require("fs");
 const path = require("path");
@@ -21,12 +34,10 @@ const MIN_ZOOM = 15;
 const MAX_ZOOM = 19;
 
 const LAYERS = [
-  { name: "carto-basemap", urlPath: "carto/basemap", ext: "jpg" },
-  { name: "carto-label", urlPath: "carto/label", ext: "png8" },
-  { name: "photo-2018", urlPath: "photo/2018", ext: "png8" },
+  { name: "street", service: "World_Street_Map", ext: "jpg" },
+  { name: "imagery", service: "World_Imagery", ext: "jpg" },
+  { name: "labels", service: "Reference/World_Boundaries_and_Places", ext: "png" },
 ];
-const LOCAL_EXT = { jpg: "jpg", png8: "png" };
-const SUBDOMAINS = "1234";
 
 function lonToTile(lon, z) {
   return Math.floor(((lon + 180) / 360) * Math.pow(2, z));
@@ -61,14 +72,13 @@ async function main() {
       for (let x = x0; x <= x1; x++) {
         for (let y = y0; y <= y1; y++) {
           const dir = path.join(ROOT, layer.name, String(z), String(x));
-          const localExt = LOCAL_EXT[layer.ext];
-          const file = path.join(dir, `${y}.${localExt}`);
+          const file = path.join(dir, `${y}.${layer.ext}`);
           if (fs.existsSync(file)) {
             skipped++;
             continue;
           }
-          const sub = SUBDOMAINS[(x + y) % SUBDOMAINS.length];
-          const url = `https://maps${sub}.nyc.gov/xyz/1.0.0/${layer.urlPath}/${z}/${x}/${y}.${layer.ext}`;
+          // Esri: {z}/{y}/{x} - row before column.
+          const url = `https://server.arcgisonline.com/ArcGIS/rest/services/${layer.service}/MapServer/tile/${z}/${y}/${x}`;
           try {
             const buf = await fetchTile(url);
             fs.mkdirSync(dir, { recursive: true });

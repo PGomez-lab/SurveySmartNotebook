@@ -9,10 +9,10 @@
  * to lat/lng (Coords.inverse) and through that same transform.
  *
  * Tiles are bundled locally under tiles/ (see scripts/download-tiles.js),
- * not fetched live from any map-tile server - this app hit a live-tile
- * block/rate-limit/redirect from three different providers (OSM, CARTO,
- * NYC's own) on multiple networks and devices, so the only durable fix is
- * not depending on a live map server at all. Covers Fort Greene Park (plus
+ * not fetched live from any map-tile server - three different live
+ * providers (OSM, CARTO, NYC's own DOITT service) each turned out blocked,
+ * key-gated, or quietly deprecated, so the only durable fix is not
+ * depending on a live map server at all. Covers Fort Greene Park (plus
  * panning margin), the area this project is actually scoped to (see
  * README). Basemap and Labels are drawn as two stacked tile layers,
  * matching the live map's default. Same-origin local files never taint the
@@ -67,9 +67,9 @@ const PlanView = (() => {
   // on the next render rather than being stuck blank for the rest of the session.
   const tileCache = new Map();
 
-  // layer: "carto-basemap" (cartographic streets/buildings/parks) or
-  // "carto-label" (text labels, drawn on top of it) - mirrors mapview.js's
-  // two stacked local tile layers (tiles/carto-basemap/, tiles/carto-label/).
+  // layer: "street" (cartographic streets/buildings/parks) or "labels"
+  // (text labels, drawn on top of it) - mirrors mapview.js's two stacked
+  // local tile layers (tiles/street/, tiles/labels/).
   function loadTileImage(layer, ext, z, x, y) {
     const maxTile = Math.pow(2, z);
     if (x < 0 || y < 0 || x >= maxTile || y >= maxTile) return Promise.resolve(null);
@@ -261,13 +261,13 @@ const PlanView = (() => {
     if (tileJobs.length <= MAX_TILES) {
       // Basemap first, then Labels drawn on top of it - same stacking the
       // live map uses by default.
-      const basemapImages = await Promise.all(tileJobs.map((j) => loadTileImage("carto-basemap", "jpg", zoom, j.tx, j.ty)));
+      const basemapImages = await Promise.all(tileJobs.map((j) => loadTileImage("street", "jpg", zoom, j.tx, j.ty)));
       basemapImages.forEach((img, i) => {
         if (!img) return;
         const { tx, ty } = tileJobs[i];
         ctx.drawImage(img, offsetX + tx * TILE_SIZE, offsetY + ty * TILE_SIZE, TILE_SIZE, TILE_SIZE);
       });
-      const labelImages = await Promise.all(tileJobs.map((j) => loadTileImage("carto-label", "png", zoom, j.tx, j.ty)));
+      const labelImages = await Promise.all(tileJobs.map((j) => loadTileImage("labels", "png", zoom, j.tx, j.ty)));
       labelImages.forEach((img, i) => {
         if (!img) return;
         const { tx, ty } = tileJobs[i];
