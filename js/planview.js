@@ -8,14 +8,15 @@
  * Plane coordinate grid is drawn by converting round Northing/Easting values
  * to lat/lng (Coords.inverse) and through that same transform.
  *
- * Tiles come from NYC's own open GIS basemap (DoITT, maps.nyc.gov) - the
- * same free, keyless tile service NYC Planning's own ZoLa runs on, and
- * actually meant for a whole classroom sharing one school IP (unlike OSM's
- * own tile server, which blocks/403s that). Basemap and Labels are drawn as
- * two stacked tile layers, matching the live map's default. It sends
- * Access-Control-Allow-Origin: *, so tiles can still be drawn onto the
- * canvas (with crossOrigin="anonymous") without tainting it - toDataURL()
- * still works for the PDF export.
+ * Tiles are bundled locally under tiles/ (see scripts/download-tiles.js),
+ * not fetched live from any map-tile server - this app hit a live-tile
+ * block/rate-limit/redirect from three different providers (OSM, CARTO,
+ * NYC's own) on multiple networks and devices, so the only durable fix is
+ * not depending on a live map server at all. Covers Fort Greene Park (plus
+ * panning margin), the area this project is actually scoped to (see
+ * README). Basemap and Labels are drawn as two stacked tile layers,
+ * matching the live map's default. Same-origin local files never taint the
+ * canvas, so toDataURL() still works for the PDF export.
  *
  * render(canvas, project) is async (tile fetching) and never rejects - a
  * tile that fails to load (offline, blocked, timeout) is just skipped,
@@ -44,16 +45,17 @@ const PlanView = (() => {
     return ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * TILE_SIZE * Math.pow(2, zoom);
   }
 
-  // Capped at 19 - NYC's basemap/label tiles (see loadTileImage) are only
-  // cached natively up to that zoom, unlike OSM's own server which this
-  // used to pull from directly.
+  // Bounded to 15-19 - the only zoom levels actually bundled under tiles/
+  // (see scripts/download-tiles.js). Below 15 there's no tile to show
+  // anyway, so 15 is the best available rather than returning a zoom with
+  // nothing bundled for it at all.
   function pickZoom(latMin, latMax, lonMin, lonMax, targetW, targetH) {
-    for (let z = 19; z >= 3; z--) {
+    for (let z = 19; z >= 15; z--) {
       const w = lonToWorldX(lonMax, z) - lonToWorldX(lonMin, z);
       const h = latToWorldY(latMin, z) - latToWorldY(latMax, z);
       if (w <= targetW && h <= targetH) return z;
     }
-    return 3;
+    return 15;
   }
 
   // Every render() (on-screen Top View tab, and again for each PDF export)
@@ -65,12 +67,9 @@ const PlanView = (() => {
   // on the next render rather than being stuck blank for the rest of the session.
   const tileCache = new Map();
 
-  // Same 1/2/3/4 subdomain spread mapview.js's L.tileLayer uses - just
-  // picked by hand here since this is a plain Image(), not a Leaflet layer.
-  const NYC_SUBDOMAINS = "1234";
-  // layer: "carto/basemap" (cartographic streets/buildings/parks) or
-  // "carto/label" (text labels, drawn on top of it) - mirrors mapview.js's
-  // two stacked NYC tile layers.
+  // layer: "carto-basemap" (cartographic streets/buildings/parks) or
+  // "carto-label" (text labels, drawn on top of it) - mirrors mapview.js's
+  // two stacked local tile layers (tiles/carto-basemap/, tiles/carto-label/).
   function loadTileImage(layer, ext, z, x, y) {
     const maxTile = Math.pow(2, z);
     if (x < 0 || y < 0 || x >= maxTile || y >= maxTile) return Promise.resolve(null);
@@ -84,12 +83,10 @@ const PlanView = (() => {
         if (result) tileCache.set(key, result);
         resolve(result);
       };
-      const sub = NYC_SUBDOMAINS[(x + y) % NYC_SUBDOMAINS.length];
       const img = new Image();
-      img.crossOrigin = "anonymous";
       img.onload = () => finish(img);
       img.onerror = () => finish(null);
-      img.src = `https://maps${sub}.nyc.gov/xyz/1.0.0/${layer}/${z}/${x}/${y}.${ext}`;
+      img.src = `tiles/${layer}/${z}/${x}/${y}.${ext}`;
       setTimeout(() => finish(null), TILE_TIMEOUT_MS);
     });
   }
@@ -264,13 +261,13 @@ const PlanView = (() => {
     if (tileJobs.length <= MAX_TILES) {
       // Basemap first, then Labels drawn on top of it - same stacking the
       // live map uses by default.
-      const basemapImages = await Promise.all(tileJobs.map((j) => loadTileImage("carto/basemap", "jpg", zoom, j.tx, j.ty)));
+      const basemapImages = await Promise.all(tileJobs.map((j) => loadTileImage("carto-basemap", "jpg", zoom, j.tx, j.ty)));
       basemapImages.forEach((img, i) => {
         if (!img) return;
         const { tx, ty } = tileJobs[i];
         ctx.drawImage(img, offsetX + tx * TILE_SIZE, offsetY + ty * TILE_SIZE, TILE_SIZE, TILE_SIZE);
       });
-      const labelImages = await Promise.all(tileJobs.map((j) => loadTileImage("carto/label", "png8", zoom, j.tx, j.ty)));
+      const labelImages = await Promise.all(tileJobs.map((j) => loadTileImage("carto-label", "png", zoom, j.tx, j.ty)));
       labelImages.forEach((img, i) => {
         if (!img) return;
         const { tx, ty } = tileJobs[i];

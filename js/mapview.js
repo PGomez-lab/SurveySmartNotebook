@@ -25,25 +25,26 @@ const MapView = (() => {
   }
 
   function init(project) {
-    map = L.map("map", { zoomControl: true, maxZoom: 21 }).setView(
+    map = L.map("map", { zoomControl: true, minZoom: 15, maxZoom: 21 }).setView(
       [project.meta.originLat, project.meta.originLng],
       18
     );
 
-    // NYC's own open GIS basemap (DoITT, maps.nyc.gov) - the same public
-    // tile service NYC Planning's own ZoLa runs on. Free, no API key
-    // (unlike Google Maps, which always needs a billing-enabled one), and
-    // actually meant for a whole classroom sharing one school IP, unlike
-    // OSM's own tile server (blocks/403s that) or a third-party CDN (can
-    // start asking for a key once usage grows). Cached tiles only go to
-    // z19 natively; maxNativeZoom lets Leaflet keep zooming past that by
-    // upscaling the z19 tile instead of requesting a z20/21 tile that
-    // doesn't exist.
-    const tileOpts = { subdomains: "1234", minZoom: 8, maxZoom: 21, maxNativeZoom: 19 };
+    // Bundled locally under tiles/ (see scripts/download-tiles.js) rather
+    // than fetched live from maps.nyc.gov - this app has now hit a live
+    // tile-server block/rate-limit/redirect from three different providers
+    // (OSM, CARTO, NYC's own), on multiple networks and devices, so the
+    // only fix that's actually durable is not depending on a live map
+    // server at all. Covers Fort Greene Park (plus panning margin) at
+    // z15-19 - the area/zoom range this project is actually scoped to (see
+    // README). maxNativeZoom lets Leaflet keep zooming past the bundled
+    // z19 by upscaling that tile instead of requesting a z20/21 one that
+    // was never downloaded.
+    const tileOpts = { minZoom: 15, maxZoom: 21, maxNativeZoom: 19 };
     const nycAttribution = '&copy; <a href="https://www1.nyc.gov/site/doitt/initiatives/gis.page">City of New York</a>';
-    const nycBasemap = L.tileLayer("https://maps{s}.nyc.gov/xyz/1.0.0/carto/basemap/{z}/{x}/{y}.jpg", Object.assign({ attribution: nycAttribution }, tileOpts));
-    const nycAerial = L.tileLayer("https://maps{s}.nyc.gov/xyz/1.0.0/photo/2018/{z}/{x}/{y}.png8", Object.assign({ attribution: nycAttribution + " (2018 aerial)" }, tileOpts));
-    const nycLabels = L.tileLayer("https://maps{s}.nyc.gov/xyz/1.0.0/carto/label/{z}/{x}/{y}.png8", tileOpts);
+    const nycBasemap = L.tileLayer("tiles/carto-basemap/{z}/{x}/{y}.jpg", Object.assign({ attribution: nycAttribution }, tileOpts));
+    const nycAerial = L.tileLayer("tiles/photo-2018/{z}/{x}/{y}.png", Object.assign({ attribution: nycAttribution + " (2018 aerial)" }, tileOpts));
+    const nycLabels = L.tileLayer("tiles/carto-label/{z}/{x}/{y}.png", tileOpts);
 
     nycBasemap.addTo(map);
     nycLabels.addTo(map);

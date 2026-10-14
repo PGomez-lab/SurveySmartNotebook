@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Smart Survey Notebook</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="vendor/leaflet.css" />
 <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -417,10 +417,13 @@
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/proj4@2.9.2/dist/proj4.js"></script>
-<script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-<script src="https://unpkg.com/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.js"></script>
+<!-- Self-hosted (not a CDN) - unpkg.com, like several map-tile domains this
+     app has hit, can be blocked by a network/device content filter. These
+     are vendored copies of the exact same versions. -->
+<script src="vendor/leaflet.js"></script>
+<script src="vendor/proj4.js"></script>
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="vendor/jspdf.plugin.autotable.js"></script>
 
 <script src="js/coords.js"></script>
 <script src="js/storage.js"></script>
